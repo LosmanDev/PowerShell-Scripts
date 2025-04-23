@@ -1,0 +1,1 @@
+IEX(Invoke-WebRequest 'https://raw.githubusercontent.com/jimrtyler/diskcleaner/refs/heads/main/DiskCleanerStandalone.ps1'); Clear-DriveJunk -DriveLetter "C" -ActuallyDeleteFiles $true -LogFile ".\diskcleaner.log"
