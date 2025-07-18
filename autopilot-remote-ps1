@@ -1,0 +1,3 @@
+Install-Script -name Get-WindowsAutopilotInfo -Force
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+Get-WindowsAutoPilotInfo.ps1 -online -TenantID "tenant" -Appid "appid" -appsecret "appsecret" -GroupTag MDM
