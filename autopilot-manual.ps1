@@ -1,16 +1,9 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 
-New-Item -Type Directory -Path "C:\HWID" 
-Set-Location -Path "C:\HWID" $env:Path += ";C:\Program Files\WindowsPowerShell\Scripts" 
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned 
-Install-Script -Name Get-WindowsAutopilotInfo 
-Get-WindowsAutopilotInfo -OutputFile AutopilotHWID.csv
-
-# Ensure TLS1.2 for script downloads
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Get the machine’s BIOS serial number
 $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber.Trim()
 
+New-Item -Type Directory -Path "C:\$serial HWID" 
 
 # Change location into the new folder
 Set-Location -Path "C:\$serial HWID"
