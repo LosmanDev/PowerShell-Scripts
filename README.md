@@ -46,6 +46,12 @@ Disk and File System
 
   # Clean system files
  cleanmgr
+
+ # Search for a text string in files (Basic)
+ find 'error' C:\logs\apps\.log
+
+ # Search for strings in files (More powerful, supports regex)
+ findstr /i /s /c:"password" C:\Users\*.txt # Case sensitive, search subdirs, literal string
 ```
 
 Clear Windows Update
