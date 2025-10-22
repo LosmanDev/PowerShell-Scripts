@@ -2,32 +2,56 @@
 Add-Type -AssemblyName Microsoft.Office.Interop.Word
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName Microsoft.VisualBasic
 
+function Show-Notification {
+    param (
+        [Parameter(Position = 0)]
+        [string]$Message,
+        [Parameter(Position = 1)]
+        [string]$Title = "company company"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Message)) { return }
+    if ([string]::IsNullOrWhiteSpace($Title)) { $Title = "company company" }
+
+    $balloon = New-Object System.Windows.Forms.NotifyIcon
+    $balloon.Icon = [System.Drawing.SystemIcons]::Information
+    $balloon.Visible = $true
+    try {
+        $balloon.ShowBalloonTip(5000, $Title, $Message, [System.Windows.Forms.ToolTipIcon]::Info)
+        Start-Sleep -Milliseconds 600
+    }
+    finally {
+        $balloon.Dispose()
+    }
+}
+
+
+$actualUsername = $MyInvocation.MyCommand.Path.Split('\')[2]
+$actualUserProfile = "C:\Users\$actualUsername"
 
 $basePaths = @{
-    # Source documents replace username with your own.
-    WelcomeLetterTemplate = "C:\"
-    SecureLetterTemplate  = "C:\"
+    WelcomeLetterTemplate = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\Welcome Letters\company company U.S. Welcome Letter Template.docx"
+    SecureLetterTemplate  = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\Welcome Letters\[name] Secure company company U.S. Welcome Letter.docx"
     
-    DesktopRoot           = "C:\"
-    DownloadsRoot         = "C:\"
+    DesktopRoot           = Join-Path $actualUserProfile "OneDrive - company\Desktop\New Hire Folders"
+    DownloadsRoot         = Join-Path $actualUserProfile "Downloads"
     
-    SecureEmailGuide      = "C:\"
-    AutoPilotGuide        = "C:\"
-    EmailTemplate         = "C:\"
+    SecureEmailGuide      = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\company company U.S. Secure Email - Accessing a Secure Email.pdf" 
+    AutoPilotGuide        = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\company company U.S. AutoPilot Laptop Configuration Instructions.pdf"
+    EmailTemplate         = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\Emails\Secure Welcome to company company!.msg"
+    TeamsTemplate         = Join-Path $actualUserProfile "AppData\Roaming\Microsoft\Templates\(optional) New Hire IT 11 Introduction.oft"
+    TeamsTemplateSource   = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\Emails\(optional) New Hire IT 11 Introduction.oft"
+    WhiteGloveTemplate    = Join-Path $actualUserProfile "OneDrive - company\Desktop\Onboarding\Emails\White Glove.msg"
     
-    # URLs
     IntuneGroupURL        = ""
     SmartsheetURL         = ""
     
-    # Filename templates
-    SecurePDFNameTemplate = ""
-    # FedEx pattern
+    SecurePDFNameTemplate = "{0} Secure company company U.S. Welcome Letter.pdf"
     FedExPattern          = "FedEx-Shipping-Label"
 }
-#endregion
 
-# Function to convert Word to PDF
 function ConvertTo-PDF {
     param (
         [string]$WordPath,
@@ -88,9 +112,69 @@ try {
         throw "One or both document paths are invalid. Please check and try again."
     }
 
-    # User input
-    $rawFullName = Read-Host "Enter full name (First Last)"
-    $startDate = Read-Host "Enter start date (MM/DD format)"
+    function Show-InputDialog {
+        param (
+            [string]$Message,
+            [string]$Title,
+            [string]$DefaultValue = ""
+        )
+    
+        $form = New-Object Windows.Forms.Form
+        $form.Text = $Title
+        $form.Size = New-Object Drawing.Size @(400, 200)
+        $form.StartPosition = "CenterScreen"
+        $form.TopMost = $true
+        $form.FormBorderStyle = "FixedDialog"
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+    
+        $label = New-Object Windows.Forms.Label
+        $label.Location = New-Object Drawing.Point @(10, 20)
+        $label.Size = New-Object Drawing.Size @(360, 40)
+        $label.Text = $Message
+        $form.Controls.Add($label)
+    
+        $textBox = New-Object Windows.Forms.TextBox
+        $textBox.Location = New-Object Drawing.Point @(10, 70)
+        $textBox.Size = New-Object Drawing.Size @(360, 20)
+        $textBox.Text = $DefaultValue
+        $form.Controls.Add($textBox)
+    
+        $okButton = New-Object Windows.Forms.Button
+        $okButton.Location = New-Object Drawing.Point @(120, 120)
+        $okButton.Size = New-Object Drawing.Size @(75, 23)
+        $okButton.Text = "OK"
+        $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
+        $form.Controls.Add($okButton)
+        $form.AcceptButton = $okButton
+    
+        $cancelButton = New-Object Windows.Forms.Button
+        $cancelButton.Location = New-Object Drawing.Point @(205, 120)
+        $cancelButton.Size = New-Object Drawing.Size @(75, 23)
+        $cancelButton.Text = "Cancel"
+        $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
+        $form.Controls.Add($cancelButton)
+        $form.CancelButton = $cancelButton
+    
+        $form.Activate()
+        $result = $form.ShowDialog()
+    
+        if ($result -eq [Windows.Forms.DialogResult]::OK) {
+            return $textBox.Text
+        }
+        return $null
+    }
+    
+    $rawFullName = Show-InputDialog -Message "Enter full name (First Last, john doe, John Doe)`nUsername might differ, edit in PDF if that's the case" -Title "Full Name"
+    if ([string]::IsNullOrEmpty($rawFullName)) {
+        throw "Name input cancelled"
+    }
+    
+    $startDate = Show-InputDialog -Message "Enter start date (MM/DD formats to use 0401, 04/01)" -Title "Start Date"
+    if ([string]::IsNullOrEmpty($startDate)) {
+        throw "Date input cancelled"
+    }
+
 
     # Process name
     $ti = (Get-Culture).TextInfo
@@ -108,7 +192,6 @@ try {
     Write-Host "Username: $username" -ForegroundColor Cyan
     Write-Host "Initial Password: $password" -ForegroundColor Cyan
 
-    # Create working copies
     $tempDocs = @{
         WelcomeLetter = Join-Path (Split-Path $basePaths.WelcomeLetterTemplate) "temp_$(Split-Path $basePaths.WelcomeLetterTemplate -Leaf)"
         SecureLetter  = Join-Path (Split-Path $basePaths.SecureLetterTemplate) "temp_$(Split-Path $basePaths.SecureLetterTemplate -Leaf)"
@@ -143,7 +226,7 @@ try {
 
     # Generate PDF paths
     $outputPDFs = @{
-        WelcomeLetter = Join-Path $userFolder ""
+        WelcomeLetter = Join-Path $userFolder "company company U.S. Welcome Letter.pdf"
         SecureLetter  = Join-Path $userFolder ($basePaths.SecurePDFNameTemplate -f $username)
     }
 
@@ -168,8 +251,6 @@ finally {
         $outputPDFs.WelcomeLetter,
         $basePaths.SecureEmailGuide,
         $basePaths.AutoPilotGuide
-        # (Get-ChildItem -Path $basePaths.DownloadsRoot -Filter "*.pdf" -ErrorAction SilentlyContinue |
-        # Where-Object { $_.Name -match $basePaths.FedExPattern }).FullName
     )
 
     # Collect other relevant PDFs, including those matching the FedEx pattern
@@ -188,24 +269,19 @@ finally {
     }
 
     # Build email and copy to clipboard
-    $email = "$username@"
+    $email = "$username@company.com"
     Set-Clipboard -Value $email
 
-    # URLs
-    $intuneUrl = "https://"
-    $smartsheetUrl = "https:/"
-    $emailUrl = "C:\Users"
-    $teamsInviteUrl = "C:\Users"
-
+    
     # Create form
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Intune Group Access"
+    $form.Text = "company company LTD New Hire Quick Links"
     $form.Size = New-Object System.Drawing.Size(500, 250)
     $form.StartPosition = "CenterScreen"
 
     # Label for email
     $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "Your email (`"$email`") has been copied to the clipboard."
+    $lbl.Text = "Your company email (`"$email`") has been copied to the clipboard."
     $lbl.AutoSize = $true
     $lbl.Location = New-Object System.Drawing.Point(10, 20)
     $form.Controls.Add($lbl)
@@ -215,7 +291,7 @@ finally {
     $intuneLink.Text = "Intune GBL exception Group Link"
     $intuneLink.AutoSize = $true
     $intuneLink.Location = New-Object System.Drawing.Point(10, 60)
-    $intuneLink.Links.Add(0, $intuneLink.Text.Length, $intuneUrl)
+    $intuneLink.Links.Add(0, $intuneLink.Text.Length, $basePaths.IntuneGroupURL)
     $intuneLink.add_LinkClicked({
             param($control, $linkEvent)
             [System.Diagnostics.Process]::Start($linkEvent.Link.LinkData)
@@ -229,32 +305,67 @@ finally {
     $emailLink.LinkColor = [System.Drawing.Color]::Blue
     $emailLink.AutoSize = $true
     $emailLink.Location = New-Object System.Drawing.Point(10, 90)
-    $emailLink.Links.Add(0, $emailLink.Text.Length, $emailUrl)
+    $emailLink.Links.Add(0, $emailLink.Text.Length, $basePaths.EmailTemplate)
     $emailLink.add_LinkClicked({
             param($control, $linkEvent)
             [System.Diagnostics.Process]::Start($linkEvent.Link.LinkData)
         })
     $form.Controls.Add($emailLink)
 
-    # Email Template LinkLabel
     $teamsInvLink = New-Object System.Windows.Forms.LinkLabel
-    $teamsInvLink.Text = "Optional New Hire IT 1:1 Introduction"
+    $teamsInvLink.Text = "Optional New Hire IT 1:1 Introduction [Add teams invite / Signature]"
     $teamsInvLink.LinkColor = [System.Drawing.Color]::Blue
     $teamsInvLink.AutoSize = $true
     $teamsInvLink.Location = New-Object System.Drawing.Point(10, 120)
-    $teamsInvLink.Links.Add(0, $teamsInvLink.Text.Length, $teamsInviteUrl)
+    $teamsInvLink.Links.Add(0, $teamsInvLink.Text.Length, $basePaths.TeamsTemplate)
+    
     $teamsInvLink.add_LinkClicked({
+            param($control, $linkEvent)
+    
+            # Use dynamic user profile paths already in $basePaths.
+            $src = $basePaths.TeamsTemplateSource
+            $dest = $basePaths.TeamsTemplate
+            try {
+                if (-not (Test-Path -LiteralPath $src)) {
+                    [System.Windows.Forms.MessageBox]::Show("Source template not found:`n$src", "Template missing", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+                    return
+                }
+    
+                $destDir = Split-Path -Path $dest -Parent
+                if (-not (Test-Path -LiteralPath $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+    
+                Copy-Item -LiteralPath $src -Destination $dest -Force
+    
+                # Open the copied .oft from the destination folder
+                Start-Process -FilePath $dest
+            }
+            catch {
+                [System.Windows.Forms.MessageBox]::Show("Failed to copy/open template:`n$($_.Exception.Message)", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            }
+        })
+    $form.Controls.Add($teamsInvLink)
+
+    # Email Template LinkLabel
+    $whiteGloveLink = New-Object System.Windows.Forms.LinkLabel
+    $whiteGloveLink.Text = "White Glove Email Template"
+    $whiteGloveLink.LinkColor = [System.Drawing.Color]::Blue
+    $whiteGloveLink.AutoSize = $true
+    $whiteGloveLink.Location = New-Object System.Drawing.Point(10, 150)
+    $whiteGloveLink.Links.Add(0, $whiteGloveLink.Text.Length, $basePaths.WhiteGloveTemplate)
+    $whiteGloveLink.add_LinkClicked({
             param($control, $linkEvent)
             [System.Diagnostics.Process]::Start($linkEvent.Link.LinkData)
         })
-    $form.Controls.Add($teamsInvLink)
+    $form.Controls.Add($whiteGloveLink)
 
     # Smartsheet LinkLabel
     $ssLink = New-Object System.Windows.Forms.LinkLabel
     $ssLink.Text = "Update New Hire Smartsheet"
     $ssLink.AutoSize = $true
-    $ssLink.Location = New-Object System.Drawing.Point(10, 150)
-    $ssLink.Links.Add(0, $ssLink.Text.Length, $smartsheetUrl)
+    $ssLink.Location = New-Object System.Drawing.Point(10, 180)
+    $ssLink.Links.Add(0, $ssLink.Text.Length, $basePaths.SmartsheetURL)
     $ssLink.add_LinkClicked({
             param($control, $linkEvent)
             [System.Diagnostics.Process]::Start($linkEvent.Link.LinkData)
@@ -262,6 +373,9 @@ finally {
     $form.Controls.Add($ssLink)
 
     [void]$form.ShowDialog()
+
+    $notif = "New Hire folder created:`nUsername: $username`nFolder: $userFolder`nFiles:`n - $($outputPDFs.WelcomeLetter)`n - $($outputPDFs.SecureLetter)"
+    Show-Notification $notif
 
     # Cleanup Word processes
     Get-Process -Name WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Kill() }
