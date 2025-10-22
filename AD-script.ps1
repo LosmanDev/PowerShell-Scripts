@@ -1,33 +1,51 @@
-$userName = "liban.osman"
+# INPUT: Either SamAccountName or EmployeeID
+$userName = ""  # e.g. "john.doe" or "123456"
 
-# Fetch user and all needed properties in one go
-$user = Get-ADUser -Identity $userName -Server ".net" `
-    -Properties Enabled, whenChanged, CanonicalName, accountExpires, AccountExpirationDate, `
-    pwdLastSet, City, Department, directReports, EmployeeID, HomeDrive, homePostalAddress, `
-    LastBadPasswordAttempt, Manager, msDS-cloudExtensionAttribute7, msDS-cloudExtensionAttribute14, `
-    Office, OfficePhone, otherMobile, PostalCode, proxyAddresses, SamAccountName, State, `
-    StreetAddress, Title, UserPrincipalName
+#Get-ADUser -Identity $userName -Server "" -Properties *
 
-# Compute password dates
+
+$commonParams = @{
+    Server     = ""
+    Properties = @(
+        'Enabled', 'Created', 'whenChanged', 'CanonicalName', 'accountExpires', 'AccountExpirationDate',
+        'pwdLastSet', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
+        'homePostalAddress', 'LastBadPasswordAttempt', 'Manager',
+        'msDS-cloudExtensionAttribute7', 'msDS-cloudExtensionAttribute6', 'msDS-cloudExtensionAttribute14',
+        'Office', 'OfficePhone', 'otherMobile', 'PostalCode', 'proxyAddresses',
+        'SamAccountName', 'State', 'StreetAddress', 'Title', 'UserPrincipalName'
+    )
+}
+
+
+if ($userName -match '^\d+$') {
+   
+    $user = Get-ADUser -Filter "EmployeeID -eq '$userName'" @commonParams |
+    Select-Object -First 1  
+}
+else {
+   
+    $user = Get-ADUser -Identity $userName @commonParams
+}
+
+if (-not $user) {
+    Throw "No user found matching '$userName'."
+}
+
 $pwdLastSetDt = [DateTime]::FromFileTime($user.pwdLastSet)
 $pwdExpiryDt = $pwdLastSetDt.AddDays(90)
 $daysLeft = ($pwdExpiryDt - (Get-Date)).Days
 
-# Compute account expiration display
-$acctExp = if ($user.AccountExpirationDate) { $user.AccountExpirationDate } else { 'Never' }
 
 if (-not $user.Enabled) {
-    # Disabled account: show minimal info
-    $disabledReport = [ordered]@{
-        'SamAccountName'   = $user.SamAccountName 
-        'Status'           = 'Disabled'
-        'Last Modified On' = $user.whenChanged
-        'OU Path'          = $user.CanonicalName
-        'Cloud Ext Attr 7' = $user.'msDS-cloudExtensionAttribute7'
-    }
-
-    [PSCustomObject]$disabledReport | Format-List
-
+    
+    [PSCustomObject]@{
+        SamAccountName = $user.SamAccountName
+        Status         = 'Disabled'
+        LastModifiedOn = $user.whenChanged
+        OUPath         = $user.CanonicalName
+        CloudExtAttr7  = $user.'msDS-cloudExtensionAttribute7'
+        Manager        = $user.Manager
+    } | Format-List
 }
 else {
     # Enabled account: all the fields
@@ -43,6 +61,7 @@ else {
         'Street Address'       = $user.StreetAddress
         'City, State, ZIP'     = "$($user.City), $($user.State) $($user.PostalCode)"
         'Home Postal Address'  = $user.homePostalAddress
+        'Employment'           = $user.'msDS-cloudExtensionAttribute6'
         'Home Drive'           = $user.HomeDrive
         'Proxy Addresses'      = ($user.proxyAddresses -join ", ")
         'Direct Reports'       = ($user.directReports -join ", ")
@@ -52,11 +71,20 @@ else {
         'OU Path'              = $user.CanonicalName
         'Password Last Set'    = $pwdLastSetDt
         'Password Expires'     = "$pwdExpiryDt ($daysLeft days left)"
-        'Account Expires'      = $acctExp
+        'Account Expires'      = $user.accountExpires
         'Enabled?'             = $user.Enabled
+        'Created'              = $user.Created
     }
-
+    
     # Display as a neat vertical list—you can swap to Format-Table if you prefer columns
     [PSCustomObject]$report | Format-List
-    
+        
 }
+ 
+#Set-ADUser -Identity $user.SamAccountName -Replace @{pwdLastSet=0}
+ 
+#Get-ADUser -Identity $user.SamAccountName -Properties pwdLastSet | Select-Object SamAccountName, pwdLastSet
+
+#Set-ADUser -Identity $user.SamAccountName -Replace @{pwdLastSet=-1}
+
+#Get-ADUser -Identity $user.SamAccountName -Properties pwdLastSet | Select-Object SamAccountName, pwdLastSet
