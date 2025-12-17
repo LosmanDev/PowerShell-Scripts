@@ -1,11 +1,13 @@
 # INPUT: Either SamAccountName or EmployeeID
 $userName = ""  # e.g. "john.doe" or "123456"
 
-#Get-ADUser -Identity $userName -Server "" -Properties *
+# Get-ADUser -Identity $userName -Server $dc -Properties *
 
+$dc = (Get-ADDomain).PDCEmulator
+$dc.MaxPasswordAge
 
 $commonParams = @{
-    Server     = ""
+    Server     = $dc
     Properties = @(
         'Enabled', 'Created', 'whenChanged', 'CanonicalName', 'accountExpires', 'AccountExpirationDate',
         'pwdLastSet', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
@@ -39,12 +41,14 @@ $daysLeft = ($pwdExpiryDt - (Get-Date)).Days
 if (-not $user.Enabled) {
     
     [PSCustomObject]@{
-        SamAccountName = $user.SamAccountName
-        Status         = 'Disabled'
-        LastModifiedOn = $user.whenChanged
-        OUPath         = $user.CanonicalName
-        CloudExtAttr7  = $user.'msDS-cloudExtensionAttribute7'
-        Manager        = $user.Manager
+        'SamAccountName' = $user.SamAccountName
+        'Status'         = 'Disabled'
+        'LastModifiedOn' = $user.whenChanged
+        'OUPath'         = $user.CanonicalName
+        'Legal Hold'     = $user.'msDS-cloudExtensionAttribute7'
+        'Manager'        = $user.Manager
+        'Title'          = $user.Title 
+        'Department'     = $user.Department 
     } | Format-List
 }
 else {
@@ -74,17 +78,16 @@ else {
         'Account Expires'      = $user.accountExpires
         'Enabled?'             = $user.Enabled
         'Created'              = $user.Created
+        'LastModifiedOn'       = $user.whenChanged
+        'Legal Hold'           = $user.'msDS-cloudExtensionAttribute7'
     }
     
     # Display as a neat vertical list—you can swap to Format-Table if you prefer columns
     [PSCustomObject]$report | Format-List
         
 }
- 
-#Set-ADUser -Identity $user.SamAccountName -Replace @{pwdLastSet=0}
- 
-#Get-ADUser -Identity $user.SamAccountName -Properties pwdLastSet | Select-Object SamAccountName, pwdLastSet
 
-#Set-ADUser -Identity $user.SamAccountName -Replace @{pwdLastSet=-1}
+#Set-ADAccountPassword -Identity $username -NewPassword (ConvertTo-SecureString '' -AsPlainText -Force) -Reset
 
-#Get-ADUser -Identity $user.SamAccountName -Properties pwdLastSet | Select-Object SamAccountName, pwdLastSet
+
+#Get-ADDefaultDomainPasswordPolicy | Select-Object MaxPasswordAge, MinPasswordAge, PasswordHistoryCount, MinPasswordLength, LockoutThreshold, LockoutDuration, LockoutObservationWindow
