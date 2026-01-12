@@ -34,43 +34,24 @@ wmic bios get smbiosbiosversion
   # Performs a detailed scan of the system image for corruption.
  DISM /Online /Cleanup-Image /RestoreHealth
 
- # 62.3% frozen
- Run:
-  sc query wuauserv
-  sc query bits
-  sc query trustedinstaller
-
   # Repairs detected corruption in the system image by downloading and replacing damaged files.
  DISM /Online /Cleanup-Image /StartComponentCleanup
 
   # Removes obsolete system files and outdated components from the Windows Component Store (WinSxS folder) to reclaim disk space, but it keeps backup components for uninstalling updates.
  Dism.exe /Online /Cleanup-Image /AnalyzeComponentStore
 
-  # To relaunch advanced options, then pick Reset this PC.
- shutdown /r /o
-
  # Commands bundled
 
-Start-Process powershell -ArgumentList '-NoExit', '-Command', @'
-Write-Host "Starting: sfc /scannow"
-sfc /scannow
-Write-Host "Finished: sfc /scannow"
-
-Write-Host "Starting: RestoreHealth"
-dism /online /cleanup-image /RestoreHealth
-Write-Host "Finished: RestoreHealth"
-
-Write-Host "Starting: StartComponentCleanup"
-dism /online /cleanup-image /StartComponentCleanup
-Write-Host "Finished: StartComponentCleanup"
-'@
-
+Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'Write-Host "Starting: sfc /scannow"; sfc /scannow; Write-Host "Finished: sfc /scannow"; Write-Host "Starting: RestoreHealth"; dism /online /cleanup-image /RestoreHealth; Write-Host "Finished: RestoreHealth"; Write-Host "Starting: StartComponentCleanup"; dism /online /cleanup-image /StartComponentCleanup; Write-Host "Finished: StartComponentCleanup"'
 
 # tail recent DISM entries
 Get-Content -Path C:\Windows\Logs\DISM\dism.log -Tail 200
 
 # tail recent Component-Based Servicing log
 Get-Content -Path C:\Windows\Logs\CBS\CBS.log -Tail 200
+
+shutdown /r /t 60 /c "Restart Initiated."
+shutdown /r /t 3600 /c "System maintenance in progress. This device will restart automatically in 60 minutes.
 
 # ###################################################################################################################
 ```
@@ -80,7 +61,7 @@ Get-Content -Path C:\Windows\Logs\CBS\CBS.log -Tail 200
 ```powershell
 
 # Uptime
-$os = Get-CimInstance Win32_OperatingSystem (New-TimeSpan $os.LastBootUpTime (Get-Date)) | Select-Object Days, Hours, Minutes
+$os = Get-CimInstance Win32_OperatingSystem; New-TimeSpan -Start $os.LastBootUpTime -End (Get-Date) | Select Days,Hours,Minutes
 
 # Get system Temperature
 Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi |
@@ -95,8 +76,8 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 # Overall CPU usage
 Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 1 -MaxSamples 5
 
-
-ms-teams OUTLOOK OneDrive
+#Kill MS sessions
+"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 # ###################################################################################################################
 ```
@@ -112,8 +93,9 @@ ms-teams OUTLOOK OneDrive
   # Clean system files
  cleanmgr
 
- # Search for a text string in files (Basic)
- find 'error' C:\logs\apps\.log
+ # Search for a text string in files
+ Select-String -Path  "C:\logs\apps\.log" -Pattern'error'
+
 
  # Search for strings in files (More powerful, supports regex)
  findstr /i /s /c:"password" C:\Users\*.txt # Case sensitive, search subdirs, literal string
@@ -142,11 +124,17 @@ ms-teams OUTLOOK OneDrive
  ipconfig /all # Shows detailed network configuration, including IP address, DNS, and MAC addresses.
  netstat -an # # Displays active connections and listening ports.
  ipconfig # Displays current network settings.
+
+ ipconfig /release # Releases the current IP address assigned to the device’s network adapter.
+ ipconfig /flushdns # Flushes the DNS cache to resolve DNS-related issues.
+ ipconfig /renew # Renews the IP address from the DHCP server.
+
+ #Restart Required
  netsh winsock reset # Resets the Winsock catalog to a clean state (fixes network stack issues).
  netsh int ip reset # Resets TCP/IP settings to default (useful for network troubleshooting).
- ipconfig /release # Releases the current IP address assigned to the device’s network adapter.
- ipconfig /renew # Renews the IP address from the DHCP server.
- ipconfig /flushdns # Flushes the DNS cache to resolve DNS-related issues.
+
+
+
 
  # ###################################################################################################################
 ```
@@ -159,6 +147,7 @@ ms-teams OUTLOOK OneDrive
  gpresult /h # List all the policies applied and security groups in HTML.
  Start-DeviceSync # Force Intune Sync.
  dsregcmd /status # Confirm the Device is Enrolled in Intune.
+ dsregcmd /refreshprt #Forces the device to immediately refresh its Primary Refresh Token (PRT) re-establishing authentication state
 
  # ###################################################################################################################
 ```
@@ -216,22 +205,27 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 # ###################################################################################################################
 ```
 
-# Force client actions manually
+```powershell
 
-- In Control Panel > Configuration Manager > Actions, run
-- Machine Policy Retrieval & Evaluation Cycle
-- Software Updates Deployment Evaluation Cycle
-- Software Updates Scan Cycle
+# ###################################################################################################################
 
-# Intune Device State Reset and Forced Compliance Evaluation Steps
+# 3 REGISTRY KEY CHECK Intune WIn32 Apps success/fail
 
-```bash
+$m = @{'4aade9c2-d76b-4a2e-9caf-58201c341f4d' = 'CISCO UMBRELLA'; '2e4c26b7-12f1-4a56-9c22-6ae0d66736ea' = 'NETSKOPE'; 'f5c225e3-9064-4caf-9c52-0f3a8f375770' = 'CROWDSTRIKE'; '9df64576-1eff-47b6-886f-00ce74f51b27' = 'Company Portal' ; '5e811505-aa71-4046-815d-68d931bfbe92' = 'Windows 11 24H2 Feature Update - NEW'; '1b0-13e6-42c8-a52d-1f1336e78647' = 'Windows 24H2 Feature Update - Download Installer';'168bc500-e7b8-4c66-8383-0205397d0d0b' = 'Kyocera CPS'}; $s = @{1000 = 'Success'; 2000 = 'Pending'; 3000 = 'In Progress'; 4000 = 'Failed' }; gci 'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps' | gci | % { $id = $_.PSChildName -replace '_.*'; if ($m.ContainsKey($id)) { $raw = (gp "$($_.PSPath)\EnforcementStateMessage" -ea 0).EnforcementStateMessage; $j = $null; if ($raw) { $j = $raw | ConvertFrom-Json }; $c = $j.EnforcementState; $e = $j.ErrorCode; if (!$c) { $c = $_.GetValue('EnforcementState'); $e = $_.GetValue('LastErrorCode') }; [pscustomobject]@{App = $m.$id; Status = $s[[int]$c]; Err = $e; ID = $id } } } | ft -a
+
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit" -Name "LastKey" -Value "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps"; Start-Process regedit
 
 # ###################################################################################################################
 
 # IME reinitializes, retrieves fresh app assignments, re-runs all detection circuitry without delay, and reports compliance faster than the standard Intune polling cycle.
 
-Get-CimInstance Win32_Service -Filter "Name='IntuneManagementExtension'" | Select-Object Name,ProcessId
+Function Reset-Intune { Write-Host ">>> RESETTING INTUNE AGENT <<<"; Stop-Service "IntuneManagementExtension" -Force -ErrorAction SilentlyContinue; "AgentExecutor", "Microsoft.Management.Services.IntuneWindowsAgent" | ForEach-Object { Get-Process $_ -ErrorAction SilentlyContinue | Stop-Process -Force }; Remove-Item "C:\ProgramData\Microsoft\IntuneManagementExtension" -Recurse -Force -ErrorAction SilentlyContinue; dsregcmd /refreshprt; Start-Service "IntuneManagementExtension"; Get-ScheduledTask | Where-Object { $_.TaskName -eq 'PushLaunch' } | Start-ScheduledTask; Write-Host ">>> DONE. Sync Triggered. <<<" }; Reset-Intune
+
+# ###################################################################################################################
+
+
+# Manual Process
+Get-CimInstance Win32_Service -Filter "Name='IntuneManagementExtension'" | Select-Object Name, ProcessId
 
 taskkill /PID 1234 /F
 
@@ -243,20 +237,19 @@ Remove-Item "C:\ProgramData\Microsoft\IntuneManagementExtension" -Recurse -Force
 
 restart-computer
 
+# Intune Sync
 start ms-settings:workplace
+
+Get-ScheduledTask -TaskName 'PushLaunch' | Start-ScheduledTask; Start-Sleep -Seconds 1; Get-ScheduledTask -TaskName 'PushLaunch' | Get-ScheduledTaskInfo | Select-Object LastRunTime, LastTaskResult
 
 dsregcmd /refreshprt
 
-$Shell = New-Object -ComObject Shell.Application
-$Shell.open("intunemanagementextension://syncapp")
+$Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp")
 
 
 Get-Service | Where-Object { $_.Name -match "csc_umbrellaagent|stAgentSvc|CSFalconService" } | Format-Table Name, Status
 
-# UMBRELLA - 4aade9c2-d76b-4a2e-9caf-58201c341f4d
-# NETSKOPE - 2e4c26b7-12f1-4a56-9c22-6ae0d66736ea
-# CROWDSTRIKE - f5c225e3-9064-4caf-9c52-0f3a8f375770
-
+```
 
 # Chrome Bookmarks
 
@@ -270,5 +263,6 @@ Get-Service | Where-Object { $_.Name -match "csc_umbrellaagent|stAgentSvc|CSFalc
 
 %appdata%\Microsoft\Signatures
 
-# ###################################################################################################################
-```
+# Kyocera Logs
+
+%APPDATA%\Kyocera Cloud Print and Scan - Print status\logs\errors
