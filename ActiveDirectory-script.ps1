@@ -1,7 +1,8 @@
 # INPUT: Either SamAccountName or EmployeeID
+
 $userName = ""  # e.g. "john.doe" or "123456"
 
-# Get-ADUser -Identity $userName -Server $dc -Properties *
+#Get-ADUser -Identity $userName -Server $dc -Properties *
 
 $dc = (Get-ADDomain).PDCEmulator
 $dc.MaxPasswordAge
@@ -11,7 +12,7 @@ $commonParams = @{
     Properties = @(
         'Enabled', 'Created', 'whenChanged', 'CanonicalName', 'accountExpires', 'AccountExpirationDate',
         'pwdLastSet', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
-        'homePostalAddress', 'LastBadPasswordAttempt', 'Manager',
+        'homePostalAddress', 'LastBadPasswordAttempt', 'LastLogonDate', 'Manager',
         'msDS-cloudExtensionAttribute7', 'msDS-cloudExtensionAttribute6', 'msDS-cloudExtensionAttribute14',
         'Office', 'OfficePhone', 'otherMobile', 'PostalCode', 'proxyAddresses',
         'SamAccountName', 'State', 'StreetAddress', 'Title', 'UserPrincipalName'
@@ -59,6 +60,7 @@ else {
         'Employee ID'          = $user.EmployeeID
         'Title'                = $user.Title       
         'Department'           = $user.Department
+        'OU Path'              = $user.CanonicalName
         'Office'               = $user.Office
         'Office Phone'         = $user.OfficePhone
         'Mobile'               = $user.otherMobile
@@ -68,11 +70,11 @@ else {
         'Employment'           = $user.'msDS-cloudExtensionAttribute6'
         'Home Drive'           = $user.HomeDrive
         'Proxy Addresses'      = ($user.proxyAddresses -join ", ")
-        'Direct Reports'       = ($user.directReports -join ", ")
-        'Last Bad Password At' = $user.LastBadPasswordAttempt
+        #'Direct Reports'       = ($user.directReports -join ", ")
         'Manager'              = $user.Manager
         'Cloud Ext Attr 14'    = $user.'msDS-cloudExtensionAttribute14'
-        'OU Path'              = $user.CanonicalName
+        'Last Bad Password At' = $user.LastBadPasswordAttemptS
+        'Last Logon Date'      = $user.lastLogonDate    
         'Password Last Set'    = $pwdLastSetDt
         'Password Expires'     = "$pwdExpiryDt ($daysLeft days left)"
         'Account Expires'      = $user.accountExpires
