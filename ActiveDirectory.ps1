@@ -55,6 +55,7 @@ if (-not $user.Enabled) {
 else {
     # Enabled account: all the fields
     $report = [ordered]@{
+        'Created'              = $user.Created
         'User Principal Name'  = $user.UserPrincipalName
         'SamAccountName'       = $user.SamAccountName
         'Employee ID'          = $user.EmployeeID
@@ -73,15 +74,13 @@ else {
         #'Direct Reports'       = ($user.directReports -join ", ")
         'Manager'              = $user.Manager
         'Cloud Ext Attr 14'    = $user.'msDS-cloudExtensionAttribute14'
-        'Last Bad Password At' = $user.LastBadPasswordAttemptS
-        'Last Logon Date'      = $user.lastLogonDate    
+        'Last Bad Password At' = $user.LastBadPasswordAttemptS    
         'Password Last Set'    = $pwdLastSetDt
         'Password Expires'     = "$pwdExpiryDt ($daysLeft days left)"
-        'Account Expires'      = $user.accountExpires
         'Enabled?'             = $user.Enabled
-        'Created'              = $user.Created
         'LastModifiedOn'       = $user.whenChanged
         'Legal Hold'           = $user.'msDS-cloudExtensionAttribute7'
+        'Account Expires'      = $user.AccountExpirationDate
     }
     
     # Display as a neat vertical list—you can swap to Format-Table if you prefer columns
@@ -89,7 +88,7 @@ else {
         
 }
 
-#Set-ADAccountPassword -Identity $username -NewPassword (ConvertTo-SecureString '' -AsPlainText -Force) -Reset
+#Set-ADAccountPassword -Identity $username -NewPassword (ConvertTo-SecureString '' -AsPlainText -Force) -Reset -COnfirm:$true
 
 
 #Get-ADDefaultDomainPasswordPolicy | Select-Object MaxPasswordAge, MinPasswordAge, PasswordHistoryCount, MinPasswordLength, LockoutThreshold, LockoutDuration, LockoutObservationWindow
