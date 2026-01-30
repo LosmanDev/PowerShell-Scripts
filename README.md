@@ -87,8 +87,8 @@ Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 1 -MaxSamples 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
-################ GUI Command: Run perfmon /rel to see the chart ###############
-
+################ Reliability Monitor ###############
+perfmon /rel
 
 # This diagnostic script checks the "health" of the PC to find hidden installation blockers: it verifies if the system is unstable (low reliability score), hasn't been rebooted in over a week, is waiting for a reboot (registry locks), has the Windows Installer service stuck, or has failed recent Windows Updates.
 
@@ -106,7 +106,7 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
 
 ```bash
 # Checks the file system and disk for errors.
- chkdsk
+ chkdsk /f; chkdsk /r
    Use /f # to fix errors.
    Use /r # to locate bad sectors and recover readable data.
 
@@ -167,14 +167,25 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
  gpupdate /force # Forces a refresh of Group Policy settings.
  wmic qfe list # Lists all installed Windows updates (useful for checking patch status).
  gpresult /h # List all the policies applied and security groups in HTML.
- Start-DeviceSync # Force Intune Sync.
  dsregcmd /status # Confirm the Device is Enrolled in Intune.
  dsregcmd /refreshprt #Forces the device to immediately refresh its Primary Refresh Token (PRT) re-establishing authentication state
- start "intunemanagementextension://syncapp" # Force Win32App sync
-# force Windows device to immediately check in with Microsoft Intune.
+
+# Force Windows device to immediately check in with Microsoft Intune and sync win32 apps and compliance
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }
+ $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp")
+ $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://synccompliance")
+ start "intunemanagementextension://syncapp"
+ start "intunemanagementextension://synccompliance"
 
-
+$t=(Get-Date).AddMinutes(-30); $events = @();
+# 1. MDM Events
+$events += Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational" -EA 0 | ?{$_.TimeCreated -ge $t -and $_.Id -in 72,73} | Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'MDM'}},@{N='Detail';E={"Session " + ($_.Id -eq 72 ? "Start" : "End")}};
+# 2. Security Events (Process Creation)
+$events += Get-WinEvent -LogName "Security" -EA 0 | ?{$_.TimeCreated -ge $t -and $_.Id -eq 4688 -and $_.Properties[5].Value -match 'AgentExecutor.exe'} | Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'PROC'}},@{N='Detail';E={$_.Properties[8].Value}};
+# 3. IME Logs
+$events += Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 600 -EA 0 | %{if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$d=[datetime]"$($Matches[1]) $($Matches[2])"; if($d -ge $t){[pscustomobject]@{Time=$d;Source='IME';Detail=$_.Replace('<![LOG[','').Split(']')[0]}}}};
+# Output
+$events | Sort Time | FT -AutoSize -Wrap
  # ###################################################################################################################
 ```
 
@@ -337,6 +348,7 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_25.122.21761.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
 ################ Chrome ###############
+
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://dl.google.com/chrome/install/latest/chrome_installer.exe'; $p="$env:TEMP\chrome_installer.exe"; n 'Downloading Google Chrome...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Google Chrome...'; start $p -Arg '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait; ri $p -Force; n 'Google Chrome Installed Successfully'; sleep 2
 
 ```
