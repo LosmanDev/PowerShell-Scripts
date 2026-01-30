@@ -181,13 +181,7 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
 
 Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\AgentExecutor.log" -Tail 50
 
-Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 1000 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D=[datetime]"$($Matches[1]) $($Matches[2])"}; if($D -gt (Get-Date).AddMinutes(-30)){ $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}}} | Format-Table -AutoSize
-
 Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 50 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D="$($Matches[1]) $($Matches[2])"}; $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}} | Format-Table -AutoSize
-
-# EventViewer logs
-
-$t=(Get-Date).AddMinutes(-30); $e=@(); $e+=Get-WinEvent -FilterHashtable @{LogName='Security';ID=4688;StartTime=$t} -EA 0|?{$_.Properties[5].Value -match 'AgentExecutor|IntuneManagement'}|Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'SECURITY'}},@{N='Detail';E={'Started: '+$_.Properties[5].Value.Split('\')[-1]}}; $e+=Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';ID=100,102;StartTime=$t} -EA 0|?{$_.Properties[0].Value -match 'PushLaunch'}|Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'SCHEDULER'}},@{N='Detail';E={$_.Message.Trim()}}; $e+=Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational';ID=72,73;StartTime=$t} -EA 0|Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'MDM'}},@{N='Detail';E={'Session '+(if($_.Id -eq 72){'Start'}else{'End'})}}; $e|Sort Time|FT -AutoSize
 
  # ###################################################################################################################
 ```
