@@ -177,15 +177,7 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
  start "intunemanagementextension://syncapp"
  start "intunemanagementextension://synccompliance"
 
-$t=(Get-Date).AddMinutes(-30); $events = @();
-# 1. MDM Events
-$events += Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational" -EA 0 | ?{$_.TimeCreated -ge $t -and $_.Id -in 72,73} | Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'MDM'}},@{N='Detail';E={"Session " + ($_.Id -eq 72 ? "Start" : "End")}};
-# 2. Security Events (Process Creation)
-$events += Get-WinEvent -LogName "Security" -EA 0 | ?{$_.TimeCreated -ge $t -and $_.Id -eq 4688 -and $_.Properties[5].Value -match 'AgentExecutor.exe'} | Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'PROC'}},@{N='Detail';E={$_.Properties[8].Value}};
-# 3. IME Logs
-$events += Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 600 -EA 0 | %{if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$d=[datetime]"$($Matches[1]) $($Matches[2])"; if($d -ge $t){[pscustomobject]@{Time=$d;Source='IME';Detail=$_.Replace('<![LOG[','').Split(']')[0]}}}};
-# Output
-$events | Sort Time | FT -AutoSize -Wrap
+$t=(Get-Date).AddMinutes(-30); $events=@(); $events+=Get-WinEvent -LogName "Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational" -EA 0|?{$_.TimeCreated -ge $t -and $_.Id -in 72,73}|Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'MDM'}},@{N='Detail';E={"Session $(if($_.Id -eq 72){'Start'}else{'End'})"}}; $events+=Get-WinEvent -LogName "Security" -EA 0|?{$_.TimeCreated -ge $t -and $_.Id -eq 4688 -and $_.Properties[5].Value -match 'AgentExecutor.exe'}|Select @{N='Time';E={$_.TimeCreated}},@{N='Source';E={'PROC'}},@{N='Detail';E={$_.Properties[8].Value}}; $events+=Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 600 -EA 0|%{if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$d=[datetime]"$($Matches[1]) $($Matches[2])"; if($d -ge $t){[pscustomobject]@{Time=$d;Source='IME';Detail=$_.Replace('<![LOG[','').Split(']')[0]}}}}; $events|Sort Time|FT -AutoSize
  # ###################################################################################################################
 ```
 
