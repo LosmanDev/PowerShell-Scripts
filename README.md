@@ -179,8 +179,11 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
 
 # Intune Logs
 
+Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\AgentExecutor.log" -Tail 50
+
 Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 1000 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D=[datetime]"$($Matches[1]) $($Matches[2])"}; if($D -gt (Get-Date).AddMinutes(-30)){ $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}}} | Format-Table -AutoSize
-PS C:\Users\liban.osman\OneDrive - BeiGene\Documents\PowerShell> Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 50 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D="$($Matches[1]) $($Matches[2])"}; $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}} | Format-Table -AutoSize
+
+Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 50 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D="$($Matches[1]) $($Matches[2])"}; $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}} | Format-Table -AutoSize
 
 # EventViewer logs
 
