@@ -12,7 +12,7 @@ $commonParams = @{
     Properties = @(
         'Enabled', 'Created', 'whenChanged', 'CanonicalName', 'DisplayName', 'accountExpires', 'AccountExpirationDate',
         'pwdLastSet', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
-        'homePostalAddress', 'LastBadPasswordAttempt', 'LastLogonDate', 'Manager',
+        'homePostalAddress', 'LastBadPasswordAttempt','LastLogonDate',  'Manager',
         'msDS-cloudExtensionAttribute7', 'msDS-cloudExtensionAttribute6', 'msDS-cloudExtensionAttribute14',
         'Office', 'OfficePhone', 'otherMobile', 'PostalCode', 'proxyAddresses',
         'SamAccountName', 'State', 'StreetAddress', 'Title', 'UserPrincipalName', 'msDS-cloudExtensionAttribute3', 'msDS-cloudExtensionAttribute15'
@@ -35,8 +35,8 @@ if (-not $user) {
 }
 
 $pwdLastSetDt = [DateTime]::FromFileTime($user.pwdLastSet)
-$pwdExpiryDt = $pwdLastSetDt.AddDays(90)
-$daysLeft = ($pwdExpiryDt - (Get-Date)).Days
+$pwdExpiryDt = $pwdLastSetDt.AddDays(180)
+$daysLeft = ($pwdExpiryDt.Date - (Get-Date).Date).Days
 
 
 if (-not $user.Enabled) {
@@ -51,6 +51,7 @@ if (-not $user.Enabled) {
         'Title'          = $user.Title 
         'Department'     = $user.Department
         'Home Email'     = $user.'msDS-cloudExtensionAttribute3'
+        'Hidden'         = $user.'msDS-cloudExtensionAttribute15'
     } | Format-List
 }
 else {
@@ -72,6 +73,7 @@ else {
         'City, State, ZIP'     = "$($user.City), $($user.State) $($user.PostalCode)"
         'Home Postal Address'  = $user.homePostalAddress
         'Employment'           = $user.'msDS-cloudExtensionAttribute6'
+        'Hidden'               = $user.'msDS-cloudExtensionAttribute15'
         'Home Drive'           = $user.HomeDrive
         'Proxy Addresses'      = ($user.proxyAddresses -join ", ")
         #'Direct Reports'       = ($user.directReports -join ", ")
