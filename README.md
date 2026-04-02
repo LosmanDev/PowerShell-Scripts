@@ -97,6 +97,13 @@ perfmon /rel
 
 Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
 
+
+# MDM, Autopilot, and AAD logs
+
+@(@{LogName='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Admin','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Autopilot','Microsoft-Windows-AAD/Operational';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)},@{LogName='Application';ProviderName='Microsoft Intune Management Extension';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)}) | % { Get-WinEvent -FilterHashtable $_ -EA 0 } | Sort TimeCreated -Descending | Select TimeCreated, LogName, ProviderName, Id, LevelDisplayName, Message | Out-GridView
+
+
+
 # ###################################################################################################################
 ```
 
@@ -173,12 +180,8 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
  $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp")
  $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://synccompliance")
 
+ Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }; $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp"); $Shell.open("intunemanagementextension://synccompliance")
 
-# Intune Logs
-
-Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\AgentExecutor.log" -Tail 50
-
-Get-Content "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneManagementExtension.log" -Tail 50 | ?{$_ -match "Launch powershell|exitCode|done processing|Script type"} | %{ if($_ -match 'date="([^"]+)".*time="([^"]+)"'){$D="$($Matches[1]) $($Matches[2])"}; $M=$_.Substring(7).Split(']')[0]; [pscustomobject]@{Time=$D; Status=($M -replace '.*(-remediationScript).*','RUNNING REMEDIATION' -replace '.*(exitCode = 0).*','SUCCESS (Exit 0)' -replace '.*(done processing \d+).*','SYNC COMPLETE' -replace '.*(Script type 8).*','CHECKING HEALTH SCRIPTS')}} | Format-Table -AutoSize
 
 # Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
 
@@ -247,6 +250,11 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 ````powershell
 
 # ###################################################################################################################
+
+# ############### Event Viwer software installed ###############
+
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='MsiInstaller'; ID=1033,11707,11724} | Select-Object TimeCreated, @{Name='Version';Expression={if($_.Message -match "Product Version: ([0-9.]+)"){ $Matches[1] }}}, Message | Out-GridView
+
 
 # ############### System Policies pushed from Intune ###############
 
@@ -335,15 +343,15 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 
 ################ Surface Laptop 5 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_25.120.4884.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.011.7745.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 6 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_25.120.480.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.013.29554.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 7 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_25.122.21761.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.022.24632.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
 ################ Chrome ###############
 
