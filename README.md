@@ -17,6 +17,8 @@ wmic bios get serialnumber
 ################ Get system bios ###############
 wmic bios get smbiosbiosversion
 
+# Incognito Edge
+Start-Process msedge -ArgumentList "-inprivate"
 
 # ###################################################################################################################
 ```
@@ -56,7 +58,7 @@ Get-Content -Path C:\Windows\Logs\CBS\CBS.log -Tail 200
 shutdown /r /t 60 /c "Restart Initiated."
 shutdown /r /t 3600 /c "System maintenance in progress. This device will restart automatically in 60 minutes."
 
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', ''
+Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'sfc /scannow'
 
 # ###################################################################################################################
 ```
@@ -96,12 +98,6 @@ perfmon /rel
 # This diagnostic script checks the "health" of the PC to find hidden installation blockers: it verifies if the system is unstable (low reliability score), hasn't been rebooted in over a week, is waiting for a reboot (registry locks), has the Windows Installer service stuck, or has failed recent Windows Updates.
 
 Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
-
-
-# MDM, Autopilot, and AAD logs
-
-@(@{LogName='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Admin','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Autopilot','Microsoft-Windows-AAD/Operational';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)},@{LogName='Application';ProviderName='Microsoft Intune Management Extension';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)}) | % { Get-WinEvent -FilterHashtable $_ -EA 0 } | Sort TimeCreated -Descending | Select TimeCreated, LogName, ProviderName, Id, LevelDisplayName, Message | Out-GridView
-
 
 
 # ###################################################################################################################
@@ -183,10 +179,6 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }; $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp"); $Shell.open("intunemanagementextension://synccompliance")
 
 
-# Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
-
-$h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host "[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  No errors found or log unavailable." -f Green } }
-
  # ###################################################################################################################
 ```
 
@@ -197,6 +189,12 @@ $h=24; $s=(Get-Date).AddHours(-$h); @{N='Application';L='APP FAILURES'},@{N='Sys
  powercfg /batteryreport # Generates a detailed battery health report.
  powercfg /energy # Generates an energy efficiency report.
  powercfg.cpl
+
+# Quick extraction of battery report
+ powercfg /batteryreport /output "$env:TEMP\br.html" > $null; $h = Get-Content "$env:TEMP\br.html" -Raw; $o = [regex]::Match($h, '(?s)Since OS install.*?<td class="hms">([^<]+)</td>.*?<div[^>]*>([^<]+)</div>.*?<td class="hms">([^<]+)</td>.*?<div[^>]*>([^<]+)</div>'); [PSCustomObject]@{ 'Design Capacity' = [regex]::Match($h, 'DESIGN CAPACITY</span></td><td>(.*?)\s*mWh').Groups[1].Value; 'Full Charge Capacity' = [regex]::Match($h, 'FULL CHARGE CAPACITY</span></td><td>(.*?)\s*mWh').Groups[1].Value; 'Cycle Count' = [regex]::Match($h, 'CYCLE COUNT</span></td><td>([^<]+)</td>').Groups[1].Value; 'Active (Full Charge)' = $o.Groups[1].Value; 'Standby (Full Charge)' = $o.Groups[2].Value; 'Active (Design Capacity)' = $o.Groups[3].Value; 'Standby (Design Capacity)' = $o.Groups[4].Value }
+
+# Event Viewer Battery reports [524 Critical]
+ Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; ID=@(524)} | Select-Object TimeCreated, Id, @{Name='Context'; Expression={switch($_.Id){524{'Critical Battery Depletion'}}}}, Message | Format-Table -AutoSize -Wrap
 
  # ###################################################################################################################
 ```
@@ -250,6 +248,16 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 ````powershell
 
 # ###################################################################################################################
+
+
+################ MDM, Autopilot, and AAD logs ###############
+
+@(@{LogName='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Admin','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Autopilot','Microsoft-Windows-AAD/Operational';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)},@{LogName='Application';ProviderName='Microsoft Intune Management Extension';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)}) | % { Get-WinEvent -FilterHashtable $_ -EA 0 } | Sort TimeCreated -Descending | Select TimeCreated, LogName, ProviderName, Id, LevelDisplayName, Message | Out-GridView
+
+################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
+
+$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host "[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  No errors found or log unavailable." -f Green } }$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
+
 
 # ############### Event Viwer software installed ###############
 
@@ -335,7 +343,7 @@ Set-Location "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
 
 ### AUTOMATED SOFTWARE INSTALLS
 
-```bash
+```powershell
 
 # ############### Lenovo System Update ###############
 
