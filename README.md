@@ -256,34 +256,42 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 
 ################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
 
-$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host "[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  No errors found or log unavailable." -f Green } }$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
+$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
 
 
 # ############### Event Viwer software installed ###############
 
-Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='MsiInstaller'; ID=1033,11707,11724} | Select-Object TimeCreated, @{Name='Version';Expression={if($_.Message -match "Product Version: ([0-9.]+)"){ $Matches[1] }}}, Message | Out-GridView
+Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
 
 
 # ############### System Policies pushed from Intune ###############
 
 gci 'HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device' -Rec | % { $p=$_.Name; $c=($p -replace '.*\\device\\?','').Split('\')[0]; $_|gp|% { $_.PSObject.Properties | ? Name -notmatch '^PS' | % { [pscustomobject]@{Source='PolicyManager'; Category=$c; Name=$_.Name; Value=$_.Value; Key=$p} } } } | sort Category,Name | ogv -Title 'Policy Manager View'
 
+# ############### Check if 3 agents are running ###############
+
 Get-Service | Where-Object { $_.Name -match "csc_umbrellaagent|stAgentSvc|CSFalconService|IntuneManagementExtension" } | Format-Table Name, Status
+
+# ############### Open Regedit to win32apps path ###############
 
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit" -Name "LastKey" -Value "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps"; Start-Process regedit
 
-'4aade9c2-d76b-4a2e-9caf-58201c341f4d' = 'Umbrella'; '2e4c26b7-12f1-4a56-9c22-6ae0d66736ea' = 'Netskope'; 'f5c225e3-9064-4caf-9c52-0f3a8f375770' = 'CsFalcon'; '9df64576-1eff-47b6-886f-00ce74f51b27' = 'Company Portal'
-
 ################ Scan Intune Extension Logs for specific ID's with error messages. ###############
+'4aade9c2-d76b-4a2e-9caf-58201c341f4d' = 'Umbrella'; 
+'2e4c26b7-12f1-4a56-9c22-6ae0d66736ea' = 'Netskope';
+'f5c225e3-9064-4caf-9c52-0f3a8f375770' = 'CsFalcon'; 
+'9df64576-1eff-47b6-886f-00ce74f51b27' = 'Company Portal'
 
 'f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92' | % { $i=$_; sls $i 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,20 | % { [pscustomobject]@{ID=$i; File=$_.Filename; Match=$_.Line.Trim(); Context=($_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail'} | Out-String).Trim()} } | select -last 5 } | fl
 
 
 # ############### Checks status for the AppID ###############
 
-$m=@{'f74971b0-13e6-42c8-a52d-1f1336e78647'='Win 24H2 Installer';'5e811505-aa71-4046-815d-68d931bfbe92'='Win 24H2 Feature Update'}; $s=@{1000='Success';2000='Pending';3000='In Progress';4000='Failed'}; gci 'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps' -Rec | ? {$m.ContainsKey($_.PSChildName)} | % { $r=($_|gp -Name EnforcementStateMessage -ea 0).EnforcementStateMessage; $j=if($r){$r|ConvertFrom-Json}; $c=$j.EnforcementState; $e=$j.ErrorCode; if(!$c){$c=$_.GetValue('EnforcementState');$e=$_.GetValue('LastErrorCode')}; [pscustomobject]@{App=$m.$_.PSChildName; Status=$s[[int]$c]; Err=$e; Time=$_.GetValue('LastUpdatedTimeUtc'); ID=$_.PSChildName} } | ft -a
+$scanApp=@{'f74971b0-13e6-42c8-a52d-1f1336e78647'='Win 24H2 Installer';'5e811505-aa71-4046-815d-68d931bfbe92'='Win 24H2 Feature Update'}; $s=@{1000='Success';2000='Pending';3000='In Progress';4000='Failed'}; gci 'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps' -Rec | ? {$scanApp.ContainsKey($_.PSChildName)} | % { $r=($_|gp -Name EnforcementStateMessage -ea 0).EnforcementStateMessage; $j=if($r){$r|ConvertFrom-Json}; $c=$j.EnforcementState; $e=$j.ErrorCode; if(!$c){$c=$_.GetValue('EnforcementState');$e=$_.GetValue('LastErrorCode')}; [pscustomobject]@{App=$scanApp.$_.PSChildName; Status=$s[[int]$c]; Err=$e; Time=$_.GetValue('LastUpdatedTimeUtc'); ID=$_.PSChildName} } | ft -a
 
-$i=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92'); $r='HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps'; $i | % { $d=$_; write-host "Scanning $d" -f Cyan; $t=gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $d}; if($t){ $t | % { write-host "Deleting $($_.Name)" -f Yellow; ri $_.PSPath -Rec -Force } } else { write-host "No keys found" -f Gray } }; write-host "Restarting Service..." -f Green; Restart-Service "IntuneManagementExtension" -Force
+# ############### Reset Intune Service to re-install AppID ###############
+
+$resetAppInstall=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92'); $r='HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps'; $resetAppInstall | % { $d=$_; write-host "Scanning $d" -f Cyan; $t=gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $d}; if($t){ $t | % { write-host "Deleting $($_.Name)" -f Yellow; ri $_.PSPath -Rec -Force } } else { write-host "No keys found" -f Gray } }; write-host "Restarting Service..." -f Green; Restart-Service "IntuneManagementExtension" -Force
 
 
 # ############### Stops service, kills history, hunts down hidden GRS keys for both apps, and restarts service ###############
