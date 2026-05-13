@@ -17,8 +17,7 @@ wmic bios get serialnumber
 ################ Get system bios ###############
 wmic bios get smbiosbiosversion
 
-# Incognito Edge
-Start-Process msedge -ArgumentList "-inprivate"
+cd "$env:USERPROFILE\downloads"
 
 # ###################################################################################################################
 ```
@@ -27,6 +26,7 @@ Start-Process msedge -ArgumentList "-inprivate"
 
 ```bash
 # ###################################################################################################################
+  
   # System File Checker
  sfc /scannow
 
@@ -58,7 +58,7 @@ Get-Content -Path C:\Windows\Logs\CBS\CBS.log -Tail 200
 shutdown /r /t 60 /c "Restart Initiated."
 shutdown /r /t 3600 /c "System maintenance in progress. This device will restart automatically in 60 minutes."
 
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'sfc /scannow'
+Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'sfc /scannow; DISM /Online /Cleanup-Image /RestoreHealth'
 
 # ###################################################################################################################
 ```
@@ -83,13 +83,11 @@ Select-Object InstanceName, @{Name = 'Fahrenheit'; Expression = { [math]::Round(
 
 Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, Id
 
-################ Overall CPU usage ###############
-
-Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 1 -MaxSamples 5
-
 ################ Kill MS sessions ###############
 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+
+"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","msedge" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -98,7 +96,6 @@ perfmon /rel
 # This diagnostic script checks the "health" of the PC to find hidden installation blockers: it verifies if the system is unstable (low reliability score), hasn't been rebooted in over a week, is waiting for a reboot (registry locks), has the Windows Installer service stuck, or has failed recent Windows Updates.
 
 Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
-
 
 # ###################################################################################################################
 ```
@@ -113,6 +110,20 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
 
   # Clean system files
  cleanmgr
+
+ # Clear System Event Logs
+wevtutil el | ForEach-Object { wevtutil cl "$_" }
+
+# SysMain pre-loads apps into RAM Disable SysMain
+Stop-Service -Name "SysMain" -Force
+Set-Service -Name "SysMain" -StartupType Disabled
+
+# Optimize System Drive
+Optimize-Volume -DriveLetter C -ReTrim -Verbose
+
+# Clear Temporary Files
+Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
 
  # Search for a text string in files
  Select-String -Path  "C:\logs\apps\.log" -Pattern'error'
@@ -158,6 +169,8 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
  netsh winsock reset # Resets the Winsock catalog to a clean state (fixes network stack issues).
  netsh int ip reset # Resets TCP/IP settings to default (useful for network troubleshooting).
 
+ $check = Test-NetConnection -ComputerName google.com -Port 443; if ($check.TcpTestSucceeded) { Write-Host "Connection Successful. Latency is $($check.PingReplyDetails.RoundTripTime)ms" -ForegroundColor Green } else { Write-Host "Connection Failed. Check Netskope Client logs." -ForegroundColor Red }
+
 
  # ###################################################################################################################
 ```
@@ -170,6 +183,12 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
  gpresult /h # List all the policies applied and security groups in HTML.
  dsregcmd /status # Confirm the Device is Enrolled in Intune.
  dsregcmd /refreshprt #Forces the device to immediately refresh its Primary Refresh Token (PRT) re-establishing authentication state
+
+ # Retrieve the 20 most recent AAD Operational events:
+ Get-WinEvent -LogName "Microsoft-Windows-AAD/Operational" -MaxEvents 20 | Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-List
+
+ # Filter specifically for Warning and Error events:
+ Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-AAD/Operational'; Level=2,3} -MaxEvents 10 | Select-Object TimeCreated, Id, Message | Format-List
 
 # Force Windows device to immediately check in with Microsoft Intune and sync win32 apps and compliance
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }
@@ -204,10 +223,7 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
 ```bash
  manage-bde -status # Displays the BitLocker encryption status of drives.
  manage-bde C: -off # Decrypts the system drive (turns off BitLocker encryption).
- manage-bde -on C: -used
- manage-bde C: -protectors -add -rp -tpm
- manage-bde -protectors -enable C:
- manage-bde -protectors -get C: > "%UserProfile%\Desktop\BitLocker-Recovery-Key.txt"
+ manage-bde -on C: -RecoveryPassword
 
  # ###################################################################################################################
 ```
@@ -249,10 +265,10 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 
 # ###################################################################################################################
 
+# Software Versions installed
 
-################ MDM, Autopilot, and AAD logs ###############
+Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
 
-@(@{LogName='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Operational','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Admin','Microsoft-Windows-ModernDeployment-Diagnostics-Provider/Autopilot','Microsoft-Windows-AAD/Operational';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)},@{LogName='Application';ProviderName='Microsoft Intune Management Extension';Level=1,2,3;StartTime=(Get-Date).AddDays(-1)}) | % { Get-WinEvent -FilterHashtable $_ -EA 0 } | Sort TimeCreated -Descending | Select TimeCreated, LogName, ProviderName, Id, LevelDisplayName, Message | Out-GridView
 
 ################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
 
@@ -271,6 +287,14 @@ gci 'HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device' -Rec | % { $p=$_.Nam
 # ############### Check if 3 agents are running ###############
 
 Get-Service | Where-Object { $_.Name -match "csc_umbrellaagent|stAgentSvc|CSFalconService|IntuneManagementExtension" } | Format-Table Name, Status
+
+# ############### Remove Cisco ###############
+
+"csc_ui.exe", "csc_ui_toast.exe", "vpnui.exe", "vpnagent.exe", "ciscod.exe" | ForEach-Object { taskkill /F /IM $_ /T 2>$null }; @("C:\Program Files (x86)\Cisco\Cisco Secure Client", "C:\ProgramData\Cisco\Cisco Secure Client") | Where-Object { Test-Path $_ } | ForEach-Object { takeown /F $_ /R /D Y | Out-Null; icacls $_ /grant Administrators:F /T /C /Q | Out-Null; Remove-Item -Path $_ -Recurse -Force }
+
+@("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") | Get-ChildItem | Get-ItemProperty | Where-Object { $_.DisplayName -match "Cisco Secure Client" } | ForEach-Object { Remove-Item -Path $_.PSPath -Recurse -Force }; @("HKLM:\SOFTWARE\Cisco\Cisco Secure Client", "HKLM:\SOFTWARE\WOW6432Node\Cisco\Cisco Secure Client") | Where-Object { Test-Path $_ } | Remove-Item -Recurse -Force
+
+Stop-Service -Name "csc_umbrellaagent" -Force -EA SilentlyContinue; sc.exe delete "csc_umbrellaagent" | Out-Null; Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\csc_umbrellaagent" -Recurse -Force -EA SilentlyContinue
 
 # ############### Open Regedit to win32apps path ###############
 
@@ -353,24 +377,124 @@ Set-Location "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
 
 ```powershell
 
+# Incognito Edge
+Start-Process msedge -ArgumentList "-inprivate"
+
 # ############### Lenovo System Update ###############
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.lenovo.com/pccbbs/thinkvantage_en/system_update_5.08.03.59.exe'; $p="$env:TEMP\lenovo_update.exe"; n 'Downloading Lenovo System Update...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Lenovo System Update...'; start $p -Arg '/VERYSILENT /NORESTART' -Wait; ri $p -Force; n 'Lenovo System Update Installed Successfully'; sleep 2
 
 ################ Surface Laptop 5 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.011.7745.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.040.371.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 6 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.013.29554.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.042.19414.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 7 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.022.24632.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.041.13628.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
 ################ Chrome ###############
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://dl.google.com/chrome/install/latest/chrome_installer.exe'; $p="$env:TEMP\chrome_installer.exe"; n 'Downloading Google Chrome...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Google Chrome...'; start $p -Arg '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait; ri $p -Force; n 'Google Chrome Installed Successfully'; sleep 2
+
+```
+
+
+```bash
+
+
+# ###################################################################################################################
+
+# Zsh/Bash Commands
+
+###################################################################################################################
+
+
+
+# See exactly how much space snapshots are taking by opening Terminal and running:
+tmutil listlocalsnapshots /
+
+# Identify large directories within the hidden Library folder:
+du -sh ~/Library/* | sort -rh | head -n 15
+
+# To reset Spotlight
+sudo mdutil -E /
+
+# Check System Temp Bloat
+sudo du -sh /private/var/folders/* | sort -rh
+
+# Check Swap File Size
+ls -lh /private/var/vm
+
+# Identify Large Logs
+sudo du -sh /Library/Logs/* | sort -rh
+
+ ############################## JAMF / MDM ############################## 
+
+# Jamf Log File Diagnostics
+cat /var/log/jamf.log
+
+# Retrieves native Apple MDM framework logs generated within the last 60 minutes.
+log show --predicate 'subsystem == "com.apple.MDM"' --last 1h 
+
+# Streams real-time execution logs for the Jamf binary.
+log stream --predicate 'process == "jamf"' 
+
+# Forces execution of pending policies scoped to the device.
+sudo jamf policy 
+
+# Initiates an inventory collection and submits data to the Jamf Pro server.
+sudo jamf recon 
+
+# Re-applies the management framework and MDM profile.
+sudo jamf manage 
+
+# Prompts for user-level MDM profile installation if missing.
+sudo jamf mdm -userLevelMdm 
+
+############################### System & Hardware Auditing ############################## 
+
+# Outputs macOS product version, build version, and product name.
+sw_vers: 
+
+# Outputs hardware UUID, serial number, processor architecture, and memory configuration.
+system_profiler SPHardwareDataType 
+
+# Displays system uptime and load averages.
+uptime 
+
+# Outputs current FileVault 2 encryption state.
+fdesetup status 
+
+# Verifies if a specific user possesses a SecureToken (required for FileVault decryption).
+sysadminctl -secureTokenStatus <username> 
+
+# Displays the status of System Integrity Protection (SIP).
+csrutil status 
+
+############################## Network Diagnostics ############################## 
+
+# Lists all registered network interfaces.
+networksetup -listallnetworkservices 
+
+# Retrieves the MAC address for the specified network service.
+networksetup -getmacaddress "Wi-Fi" 
+
+# Executes standard ICMP echo requests with a defined packet count.
+ping -c 4 <hostname> 
+
+Directory & Account Operations
+
+# Lists all local user accounts.
+dscl . -list /Users 
+
+# Outputs all directory attributes (UID, GID, home directory path) for a specified account.
+dscl . -read /Users/<username> 
+
+# Grants local administrator privileges to a standard user.
+sudo dseditgroup -o edit -a <username> -t user admin 
 
 ```
