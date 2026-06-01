@@ -87,7 +87,9 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
-"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","msedge" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+
+"OUTLOOK","ms-teams","Teams" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -197,6 +199,14 @@ Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyConti
 
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }; $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp"); $Shell.open("intunemanagementextension://synccompliance")
 
+ 
+start ms-cxh:localonly # Create a local windows account
+start ms-availablenetworks: # Access Network from CMD
+start ms-settings:windowsupdate # Access updates
+start ms-settings:workplace # Intune Sync
+shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
+shutdown.exe /r /fw /t 0 # Motherboard Firmware Interface (UEFI / BIOS)
+
 
  # ###################################################################################################################
 ```
@@ -249,12 +259,6 @@ compmgmt.msc #computer management
 sysdm.cpl # System props (Add more RAM)
 appwiz.cpl # control panel applications
 
-start ms-cxh:localonly # Create a local windows account
-start ms-availablenetworks: # Access Network from CMD
-start ms-settings:windowsupdate # Access updates
-start ms-settings:workplace #Intune Sync
-shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
-
 
 # ###################################################################################################################
 ```
@@ -268,6 +272,8 @@ shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
 # Software Versions installed
 
 Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
+
+Get-EventLog -LogName Application -Source "Application Error" -Newest 10 | Where-Object {$_.Message -match "msedge.exe"} | Select-Object -ExpandProperty Message
 
 
 ################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
@@ -322,7 +328,7 @@ $resetAppInstall=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-81
 
 Stop-Service "IntuneManagementExtension" -Force -ea 0; $t=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92'); $r="HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps"; $t | % { $id=$_; Write-Host "Cleaning $id" -f Cyan; gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $id} | ri -Rec -Force; gci $r | % { gci "$($_.PSPath)\GRS" -ea 0 | ? {$_.PSChildName -eq $id} | ri -Rec -Force } }; Start-Service "IntuneManagementExtension"
 
-# ############### Log Error Tracker ###############
+# ############### App ID Log Error Tracker ###############
 
 sls 'f74971b0-13e6-42c8-a52d-1f1336e78647|5e811505-aa71-4046-815d-68d931bfbe92' 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,15 | % { $c=$_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail|GRS'} | Out-String; if($c){ [pscustomobject]@{Log=$_.Filename; Match=$_.Line.Trim().Substring(0, [math]::Min(80,$_.Line.Length)); Context=$c.Trim()} } } | fl
 
@@ -359,6 +365,35 @@ $src="$env:APPDATA\Microsoft\Signatures";$dst="$env:USERPROFILE\OneDrive - BeiGe
 ################ Reverse: OneDrive → local Outlook signatures ###############
 $src="$env:USERPROFILE\OneDrive - BeiGene\Desktop\Signatures";$dst="$env:APPDATA\Microsoft\Signatures";if(!(Test-Path $dst)){New-Item $dst -ItemType Directory|Out-Null};Move-Item "$src\*" $dst -Recurse -Force
 
+
+################ Notepad ###############
+Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe.Appx"
+Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe.Appx"
+Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.UI.Xaml.2.7_7.2409.9001.0_x64__8wekyb3d8bbwe.Appx"
+Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.WindowsNotepad_11.2604.5.0_neutral_~_8wekyb3d8bbwe.Msixbundle"
+
+$UWPPath = (Get-AppxPackage Microsoft.WindowsNotepad).InstallLocation + "\Notepad\Notepad.exe"
+& $UWPPath
+
+# 1. Purge the broken user-context installation and custom registry routing
+Get-AppxPackage *WindowsNotepad* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\notepad.exe" -Force -ErrorAction SilentlyContinue
+
+# 2. Define absolute payload paths
+$Dir = "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad"
+$Bundle = "$Dir\Microsoft.WindowsNotepad_11.2604.5.0_neutral_~_8wekyb3d8bbwe.Msixbundle"
+$Dep1 = "$Dir\Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe.Appx"
+$Dep2 = "$Dir\Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe.Appx"
+$Dep3 = "$Dir\Microsoft.UI.Xaml.2.7_7.2409.9001.0_x64__8wekyb3d8bbwe.Appx"
+
+# 3. Inject payload directly into the global machine image
+Add-AppxProvisionedPackage -Online -PackagePath $Bundle -DependencyPackagePath $Dep1, $Dep2, $Dep3 -SkipLicense
+
+# 4. Force OS registration for the current active session
+$Manifest = (Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsNotepad_*_x64__8wekyb3d8bbwe" -Directory | Select-Object -First 1).FullName + "\AppxManifest.xml"
+Add-AppxPackage -Register $Manifest -DisableDevelopmentMode
+
+
 ```
 
 # ############### Kyocera Logs ###############
@@ -370,6 +405,36 @@ $src="$env:USERPROFILE\OneDrive - BeiGene\Desktop\Signatures";$dst="$env:APPDATA
 Set-Location "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
 .\OfficeC2RClient.exe /changesetting Channel=MonthlyEnterprise
 .\OfficeC2RClient.exe /update user
+
+
+# ############### Outlook Legacy Room Finder ###############
+
+$s=(Get-CimInstance Win32_UserProfile | ? LocalPath -match "mike.kao").SID; $p1="Registry::HKEY_USERS\$s\SOFTWARE\Policies\Microsoft\Office\16.0\Outlook\Options\Calendar"; $p2="Registry::HKEY_USERS\$s\SOFTWARE\Microsoft\Office\16.0\Outlook\Preferences"; if(!(Test-Path $p1)){New-Item $p1 -Force | Out-Null}; New-ItemProperty -Path $p1 -Name "ShowLegacyRoomFinder" -Value 1 -PropertyType DWord -Force | Out-Null; if(!(Test-Path $p2)){New-Item $p2 -Force | Out-Null}; New-ItemProperty -Path $p2 -Name "RoomFinderForceWebView" -Value 0 -PropertyType DWord -Force | Out-Null
+
+
+# ############### Intune Log collection ###############
+
+md C:\temp\odc
+cd c:\temp\odc
+wget https://aka.ms/intunePS1 -outfile IntuneODCStandAlone.ps1
+wget https://aka.ms/intuneXML -outfile Intune.xml
+Set-ExecutionPolicy Bypass
+.\IntuneODCStandAlone.ps1
+
+# ############### Edge Fix ###############
+
+Remove-Item -Path "C:\Program Files (x86)\Microsoft\Edge\Application\149.*" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "C:\Program Files (x86)\Microsoft\EdgeUpdate\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+$ClientKeys = @(
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}",
+    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}"
+)
+foreach ($Key in $ClientKeys) { Remove-Item -Path $Key -Recurse -Force -ErrorAction SilentlyContinue }
+
+Start-Process msiexec.exe -ArgumentList '/i "C:\Users\ray.nunez\Downloads\MicrosoftEdgeEnterpriseX64.msi" /qn /norestart /L*V "C:\edge_install.log"' -Wait -NoNewWindow
+
+https://www.microsoft.com/en-us/edge/business/download?form=MA13FJ
 
 ````
 
@@ -386,15 +451,15 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 
 ################ Surface Laptop 5 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.040.371.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.043.30647.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 6 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.042.19414.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.051.6840.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 7 ###############
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.041.13628.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.043.33704.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
 ################ Chrome ###############
 
@@ -402,17 +467,40 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 
 ```
 
-
 # Zsh/Bash Commands
 
 ```bash
 
 # ###################################################################################################################
+/System/Volumes/Data/Library/SystemExtensions/> 
+                     
+102G    /Library/SystemExtensions/.staging
+systemextensionsctl list | Select-String "com.crowdstrike.falcon"
+
+X9E956P446 com.crowdstrike.falcon.Agent (7.36/208.07) Falcon Sensor [activated enabled]
+X9E956P446 com.crowdstrike.falcon.Agent (7.35/207.04)  Falcon Sensor [terminated waiting to uninstall on reboot]
+
+df -h /                                                        
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s1s1   228Gi    12Gi    34Gi    26%    458k  359M    0%   /
+
 
 ###################################################################################################################
 
+# print the top 20 largest ghost files
+sudo lsof +L1 | awk '{print $1, $2, $3, $7, $10}' | sort -nk 4 | tail -n 20
 
+sudo du -sh /System/Volumes/Data/Library/* 2>/dev/null | sort -rh | head -n 10
 
+sudo bash -c "du -sh /Library/SystemExtensions/.* 2>/dev/null | sort -rh | head -n 5"
+
+sudo find /Library/SystemExtensions/.staging -name "*.systemextension" | head -n 20
+
+# Find specific bloated temp folder
+sudo du -sh /private/var/folders/*/* | sort -rh | head -n 10
+
+# Size of virtual memory
+ls -lh /private/var/vm
 
 # See exactly how much space snapshots are taking by opening Terminal and running:
 tmutil listlocalsnapshots /
@@ -426,11 +514,6 @@ sudo mdutil -E /
 # Check System Temp Bloat
 sudo du -sh /private/var/folders/* | sort -rh
 
-# Check Swap File Size
-ls -lh /private/var/vm
-
-# Identify Large Logs
-sudo du -sh /Library/Logs/* | sort -rh
 
  ############################## JAMF / MDM ############################## 
 
