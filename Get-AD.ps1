@@ -1,9 +1,10 @@
-# INPUT: Either SamAccountName or EmployeeID
+# Either SamAccountName or EmployeeID
 
 $userName = ""  # e.g. "john.doe" or "123456"
 
-#Get-ADUser -Identity $userName -Server $dc -Properties *
+#Set-ADAccountPassword -Identity $username -NewPassword (ConvertTo-SecureString '' -AsPlainText -Force) -Reset -COnfirm:$true;
 
+#Get-ADUser -Identity $userName -Server $dc -Properties *
 $dc = (Get-ADDomain).PDCEmulator
 $dc.MaxPasswordAge
 
@@ -11,7 +12,7 @@ $commonParams = @{
     Server     = $dc
     Properties = @(
         'Enabled', 'Created', 'whenChanged', 'CanonicalName', 'DisplayName', 'accountExpires', 'AccountExpirationDate',
-        'pwdLastSet', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
+        'pwdLastSet','PasswordExpired', 'City', 'Department', 'directReports', 'EmployeeID', 'HomeDrive',
         'homePostalAddress', 'LastBadPasswordAttempt','LastLogonDate',  'Manager',
         'msDS-cloudExtensionAttribute7', 'msDS-cloudExtensionAttribute6', 'msDS-cloudExtensionAttribute14',
         'Office', 'OfficePhone', 'otherMobile', 'PostalCode', 'proxyAddresses',
@@ -82,8 +83,9 @@ else {
         'Last Bad Password At' = $user.LastBadPasswordAttemptS    
         'Password Last Set'    = $pwdLastSetDt
         'Password Expires'     = "$pwdExpiryDt ($daysLeft days left)"
-        'Enabled?'             = $user.Enabled
-        'LastModifiedOn'       = $user.whenChanged
+        'Password Exipred'     = $user.PasswordExpired
+        'Enabled'              = $user.Enabled
+        'Last Update'          = $user.whenChanged
         'Legal Hold'           = $user.'msDS-cloudExtensionAttribute7'
         'Account Expires'      = $user.AccountExpirationDate
     }
@@ -92,8 +94,6 @@ else {
     [PSCustomObject]$report | Format-List
         
 }
-
-#Set-ADAccountPassword -Identity $username -NewPassword (ConvertTo-SecureString '' -AsPlainText -Force) -Reset -COnfirm:$true
 
 
 #Get-ADDefaultDomainPasswordPolicy | Select-Object MaxPasswordAge, MinPasswordAge, PasswordHistoryCount, MinPasswordLength, LockoutThreshold, LockoutDuration, LockoutObservationWindow
