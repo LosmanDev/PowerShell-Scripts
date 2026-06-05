@@ -17,7 +17,6 @@ wmic bios get serialnumber
 ################ Get system bios ###############
 wmic bios get smbiosbiosversion
 
-cd "$env:USERPROFILE\downloads"
 
 # ###################################################################################################################
 ```
@@ -47,7 +46,9 @@ cd "$env:USERPROFILE\downloads"
 
  ################ Commands bundled ###############
 
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'Write-Host "Starting: sfc /scannow"; sfc /scannow; Write-Host "Finished: sfc /scannow"; Write-Host "Starting: RestoreHealth"; dism /online /cleanup-image /RestoreHealth; Write-Host "Finished: RestoreHealth"; Write-Host "Starting: StartComponentCleanup"; dism /online /cleanup-image /StartComponentCleanup; Write-Host "Finished: StartComponentCleanup"'
+Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile', '-Command', "sfc /scannow; DISM /Online /Cleanup-Image /StartComponentCleanup; DISM /Online /Cleanup-Image /RestoreHealth; shutdown /r /t 60 /c 'Restart Initiated.'"
+
+Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile', '-Command', 'sfc /scannow; DISM /Online /Cleanup-Image /StartComponentCleanup; DISM /Online /Cleanup-Image /RestoreHealth; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $f=New-Object Windows.Forms.Form; $f.Width=350; $f.Height=150; $f.StartPosition=''CenterScreen''; $f.TopMost=$true; $f.Text=''Please save your work''; $f.ControlBox=$false; $l=New-Object Windows.Forms.Label; $l.AutoSize=$true; $l.Font=New-Object Drawing.Font(''Segoe UI'', 14); $l.Top=40; $l.Left=50; $f.Controls.Add($l); $f.Show(); for($i=120; $i -gt 0; $i--){$l.Text=''Restarting in ''+$i+'' seconds...''; $f.Refresh(); Start-Sleep 1}; Restart-Computer -Force'
 
 ################ tail recent DISM entries###############
 Get-Content -Path C:\Windows\Logs\DISM\dism.log -Tail 200
@@ -58,7 +59,6 @@ Get-Content -Path C:\Windows\Logs\CBS\CBS.log -Tail 200
 shutdown /r /t 60 /c "Restart Initiated."
 shutdown /r /t 3600 /c "System maintenance in progress. This device will restart automatically in 60 minutes."
 
-Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'sfc /scannow; DISM /Online /Cleanup-Image /RestoreHealth'
 
 # ###################################################################################################################
 ```
@@ -89,7 +89,7 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
-"OUTLOOK","ms-teams","Teams" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"OUTLOOK" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -105,6 +105,14 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
 ### Disk and File System
 
 ```bash
+
+cd "$env:USERPROFILE\downloads"
+
+# Downloads size check
+
+Get-ChildItem "$env:USERPROFILE\Downloads" -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum | Select-Object @{N='Folder';E={"$env:USERPROFILE\Downloads"}}, @{N='SizeMB';E={[math]::Round($_.Sum / 1MB, 2)}}, @{N='SizeGB';E={[math]::Round($_.Sum / 1GB, 2)}}
+
+
 # Checks the file system and disk for errors.
  chkdsk /f; chkdsk /r
    Use /f # to fix errors.
@@ -113,9 +121,6 @@ Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_Reliabi
   # Clean system files
  cleanmgr
 
- # Clear System Event Logs
-wevtutil el | ForEach-Object { wevtutil cl "$_" }
-
 # SysMain pre-loads apps into RAM Disable SysMain
 Stop-Service -Name "SysMain" -Force
 Set-Service -Name "SysMain" -StartupType Disabled
@@ -123,13 +128,14 @@ Set-Service -Name "SysMain" -StartupType Disabled
 # Optimize System Drive
 Optimize-Volume -DriveLetter C -ReTrim -Verbose
 
-# Clear Temporary Files
-Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+# Empty the Recycle Bin silently
+Clear-RecycleBin -Force
+
+# Clear temporary files
+Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 
  # Search for a text string in files
  Select-String -Path  "C:\logs\apps\.log" -Pattern'error'
-
 
  # Search for strings in files (More powerful, supports regex)
  findstr /i /s /c:"password" C:\Users\*.txt # Case sensitive, search subdirs, literal string
@@ -171,9 +177,9 @@ Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyConti
  netsh winsock reset # Resets the Winsock catalog to a clean state (fixes network stack issues).
  netsh int ip reset # Resets TCP/IP settings to default (useful for network troubleshooting).
 
- $check = Test-NetConnection -ComputerName google.com -Port 443; if ($check.TcpTestSucceeded) { Write-Host "Connection Successful. Latency is $($check.PingReplyDetails.RoundTripTime)ms" -ForegroundColor Green } else { Write-Host "Connection Failed. Check Netskope Client logs." -ForegroundColor Red }
+ Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'ipconfig /release; ipconfig /flushdns; ipconfig /renew; netsh winsock reset' 
 
-
+ 
  # ###################################################################################################################
 ```
 
@@ -205,7 +211,7 @@ start ms-availablenetworks: # Access Network from CMD
 start ms-settings:windowsupdate # Access updates
 start ms-settings:workplace # Intune Sync
 shutdown /r /o /f /t 0 # Windows Recovery Environment (WinRE),
-shutdown.exe /r /fw /t 0 # Motherboard Firmware Interface (UEFI / BIOS)
+shutdown /r /fw /t 0 # Motherboard Firmware Interface (UEFI / BIOS)
 
 
  # ###################################################################################################################
@@ -269,21 +275,18 @@ appwiz.cpl # control panel applications
 
 # ###################################################################################################################
 
-# Software Versions installed
+# ############### Software Versions installed on system ###############
 
 Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
 
-Get-EventLog -LogName Application -Source "Application Error" -Newest 10 | Where-Object {$_.Message -match "msedge.exe"} | Select-Object -ExpandProperty Message
+# ############### Event Viwer softwares installed by recent date###############
+
+Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
 
 
 ################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
 
 $scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
-
-
-# ############### Event Viwer software installed ###############
-
-Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
 
 
 # ############### System Policies pushed from Intune ###############
@@ -301,10 +304,6 @@ Get-Service | Where-Object { $_.Name -match "csc_umbrellaagent|stAgentSvc|CSFalc
 @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") | Get-ChildItem | Get-ItemProperty | Where-Object { $_.DisplayName -match "Cisco Secure Client" } | ForEach-Object { Remove-Item -Path $_.PSPath -Recurse -Force }; @("HKLM:\SOFTWARE\Cisco\Cisco Secure Client", "HKLM:\SOFTWARE\WOW6432Node\Cisco\Cisco Secure Client") | Where-Object { Test-Path $_ } | Remove-Item -Recurse -Force
 
 Stop-Service -Name "csc_umbrellaagent" -Force -EA SilentlyContinue; sc.exe delete "csc_umbrellaagent" | Out-Null; Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\csc_umbrellaagent" -Recurse -Force -EA SilentlyContinue
-
-# ############### Open Regedit to win32apps path ###############
-
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit" -Name "LastKey" -Value "Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps"; Start-Process regedit
 
 ################ Scan Intune Extension Logs for specific ID's with error messages. ###############
 '4aade9c2-d76b-4a2e-9caf-58201c341f4d' = 'Umbrella'; 
@@ -386,7 +385,6 @@ $Dep1 = "$Dir\Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe.Appx"
 $Dep2 = "$Dir\Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe.Appx"
 $Dep3 = "$Dir\Microsoft.UI.Xaml.2.7_7.2409.9001.0_x64__8wekyb3d8bbwe.Appx"
 
-# 3. Inject payload directly into the global machine image
 Add-AppxProvisionedPackage -Online -PackagePath $Bundle -DependencyPackagePath $Dep1, $Dep2, $Dep3 -SkipLicense
 
 # 4. Force OS registration for the current active session
@@ -449,15 +447,16 @@ Start-Process msedge -ArgumentList "-inprivate"
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.lenovo.com/pccbbs/thinkvantage_en/system_update_5.08.03.59.exe'; $p="$env:TEMP\lenovo_update.exe"; n 'Downloading Lenovo System Update...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Lenovo System Update...'; start $p -Arg '/VERYSILENT /NORESTART' -Wait; ri $p -Force; n 'Lenovo System Update Installed Successfully'; sleep 2
 
-################ Surface Laptop 5 ###############
+################ Surface Laptop 5 ############### https://www.microsoft.com/en-us/download/details.aspx?id=104679
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.043.30647.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
 
-################ Surface Laptop 6 ###############
+
+################ Surface Laptop 6 ############### https://www.microsoft.com/en-us/download/details.aspx?id=105946
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.051.6840.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
-################ Surface Laptop 7 ###############
+################ Surface Laptop 7 ############### https://www.microsoft.com/en-us/download/details.aspx?id=108014
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.043.33704.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
