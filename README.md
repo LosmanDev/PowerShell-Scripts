@@ -73,11 +73,7 @@ $os = Get-CimInstance Win32_OperatingSystem; New-TimeSpan -Start $os.LastBootUpT
 
 ################ Get system Temperature ###############
 
-Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi |
-Where-Object CurrentTemperature -gt 0 |
-Sort-Object CurrentTemperature -Descending |
-Select-Object -First 1 |
-Select-Object InstanceName, @{Name = 'Fahrenheit'; Expression = { [math]::Round((($_.CurrentTemperature / 10 - 273.15) * 9 / 5) + 32, 1) } }
+Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Where-Object CurrentTemperature -gt 0 | Sort-Object CurrentTemperature -Descending | Select-Object -First 1 | Select-Object InstanceName, @{Name = 'Fahrenheit'; Expression = { [math]::Round((($_.CurrentTemperature / 10 - 273.15) * 9 / 5) + 32, 1) } }
 
 ################ CPU / memory per process ###############
 
@@ -85,11 +81,9 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 
 ################ Kill MS sessions ###############
 
-"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome"
 
-"POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
-
-"OUTLOOK" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"OneDrive" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -97,7 +91,7 @@ perfmon /rel
 
 # This diagnostic script checks the "health" of the PC to find hidden installation blockers: it verifies if the system is unstable (low reliability score), hasn't been rebooted in over a week, is waiting for a reboot (registry locks), has the Windows Installer service stuck, or has failed recent Windows Updates.
 
-Write-Host "DIAGNOSTICS & BLOCKERS" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
+Write-Host "Reliability Monitor" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
 
 # ###################################################################################################################
 ```
@@ -179,6 +173,12 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 
  Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'ipconfig /release; ipconfig /flushdns; ipconfig /renew; netsh winsock reset' 
 
+ping -f -l 1472 8.8.8.8
+ping -f -l 1464 8.8.8.8
+ping -f -l 1450 8.8.8.8
+ping -f -l 1350 8.8.8.8
+
+netsh interface ipv4 show subinterfaces
  
  # ###################################################################################################################
 ```
@@ -192,11 +192,11 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
  dsregcmd /status # Confirm the Device is Enrolled in Intune.
  dsregcmd /refreshprt #Forces the device to immediately refresh its Primary Refresh Token (PRT) re-establishing authentication state
 
- # Retrieve the 20 most recent AAD Operational events:
- Get-WinEvent -LogName "Microsoft-Windows-AAD/Operational" -MaxEvents 20 | Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-List
-
+```
+```powershell
  # Filter specifically for Warning and Error events:
- Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-AAD/Operational'; Level=2,3} -MaxEvents 10 | Select-Object TimeCreated, Id, Message | Format-List
+ Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-AAD/Operational','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin'; Level=2,3} -MaxEvents 10 | Select-Object TimeCreated, Id, LogName, Message | Format-List
+
 
 # Force Windows device to immediately check in with Microsoft Intune and sync win32 apps and compliance
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }
@@ -205,7 +205,9 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }; $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp"); $Shell.open("intunemanagementextension://synccompliance")
 
- 
+
+```
+```bash 
 start ms-cxh:localonly # Create a local windows account
 start ms-availablenetworks: # Access Network from CMD
 start ms-settings:windowsupdate # Access updates
@@ -279,15 +281,14 @@ appwiz.cpl # control panel applications
 
 Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
 
-# ############### Event Viwer softwares installed by recent date###############
+# ############### Event Viwer softwares installed by recent date ###############
 
 Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
 
 
 ################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
 
-$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); @{N='Application';L='APP FAILURES'},@{N='System';L='SYSTEM FAILURES'},@{N='Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin';L='INTUNE FAILURES'} | % { Write-Host "`nLOG: $($_.L)" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_.N; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
-
+$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); 'Application','System','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin' | % { Write-Host "`nLOG: $_" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
 
 # ############### System Policies pushed from Intune ###############
 
@@ -321,7 +322,6 @@ $scanApp=@{'f74971b0-13e6-42c8-a52d-1f1336e78647'='Win 24H2 Installer';'5e811505
 # ############### Reset Intune Service to re-install AppID ###############
 
 $resetAppInstall=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92'); $r='HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps'; $resetAppInstall | % { $d=$_; write-host "Scanning $d" -f Cyan; $t=gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $d}; if($t){ $t | % { write-host "Deleting $($_.Name)" -f Yellow; ri $_.PSPath -Rec -Force } } else { write-host "No keys found" -f Gray } }; write-host "Restarting Service..." -f Green; Restart-Service "IntuneManagementExtension" -Force
-
 
 # ############### Stops service, kills history, hunts down hidden GRS keys for both apps, and restarts service ###############
 
@@ -363,34 +363,6 @@ $src="$env:APPDATA\Microsoft\Signatures";$dst="$env:USERPROFILE\OneDrive - BeiGe
 
 ################ Reverse: OneDrive → local Outlook signatures ###############
 $src="$env:USERPROFILE\OneDrive - BeiGene\Desktop\Signatures";$dst="$env:APPDATA\Microsoft\Signatures";if(!(Test-Path $dst)){New-Item $dst -ItemType Directory|Out-Null};Move-Item "$src\*" $dst -Recurse -Force
-
-
-################ Notepad ###############
-Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe.Appx"
-Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe.Appx"
-Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.UI.Xaml.2.7_7.2409.9001.0_x64__8wekyb3d8bbwe.Appx"
-Add-AppxPackage -Path "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad\Microsoft.WindowsNotepad_11.2604.5.0_neutral_~_8wekyb3d8bbwe.Msixbundle"
-
-$UWPPath = (Get-AppxPackage Microsoft.WindowsNotepad).InstallLocation + "\Notepad\Notepad.exe"
-& $UWPPath
-
-# 1. Purge the broken user-context installation and custom registry routing
-Get-AppxPackage *WindowsNotepad* | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
-Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\notepad.exe" -Force -ErrorAction SilentlyContinue
-
-# 2. Define absolute payload paths
-$Dir = "C:\Users\liban.osman\OneDrive - BeiGene\Documents\Softwares\Notepad"
-$Bundle = "$Dir\Microsoft.WindowsNotepad_11.2604.5.0_neutral_~_8wekyb3d8bbwe.Msixbundle"
-$Dep1 = "$Dir\Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe.Appx"
-$Dep2 = "$Dir\Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64__8wekyb3d8bbwe.Appx"
-$Dep3 = "$Dir\Microsoft.UI.Xaml.2.7_7.2409.9001.0_x64__8wekyb3d8bbwe.Appx"
-
-Add-AppxProvisionedPackage -Online -PackagePath $Bundle -DependencyPackagePath $Dep1, $Dep2, $Dep3 -SkipLicense
-
-# 4. Force OS registration for the current active session
-$Manifest = (Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsNotepad_*_x64__8wekyb3d8bbwe" -Directory | Select-Object -First 1).FullName + "\AppxManifest.xml"
-Add-AppxPackage -Register $Manifest -DisableDevelopmentMode
-
 
 ```
 
