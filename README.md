@@ -179,6 +179,8 @@ ping -f -l 1450 8.8.8.8
 ping -f -l 1350 8.8.8.8
 
 netsh interface ipv4 show subinterfaces
+
+netsh interface ipv4 set subinterface "InterfaceName" mtu=YourMTUValue store=persistent
  
  # ###################################################################################################################
 ```
@@ -419,18 +421,21 @@ Start-Process msedge -ArgumentList "-inprivate"
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.lenovo.com/pccbbs/thinkvantage_en/system_update_5.08.03.59.exe'; $p="$env:TEMP\lenovo_update.exe"; n 'Downloading Lenovo System Update...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Lenovo System Update...'; start $p -Arg '/VERYSILENT /NORESTART' -Wait; ri $p -Force; n 'Lenovo System Update Installed Successfully'; sleep 2
 
-################ Surface Laptop 5 ############### https://www.microsoft.com/en-us/download/details.aspx?id=104679
+################ Surface Laptop 5 ############### 
+# https://www.microsoft.com/en-us/download/details.aspx?id=104679
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/68992368-8d70-4231-a9e4-23dfaede832b/SurfaceLaptop5_Win11_22631_26.043.30647.0.msi'; $p="$env:TEMP\surface5_update.msi"; n 'Downloading Surface Laptop 5 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 5 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 5 Drivers Installed Successfully'; sleep 2
 
 
-################ Surface Laptop 6 ############### https://www.microsoft.com/en-us/download/details.aspx?id=105946
+################ Surface Laptop 6 ############### 
+# https://www.microsoft.com/en-us/download/details.aspx?id=105946
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.051.6840.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
-################ Surface Laptop 7 ############### https://www.microsoft.com/en-us/download/details.aspx?id=108014
+################ Surface Laptop 7 ############### 
+# https://www.microsoft.com/en-us/download/details.aspx?id=108014
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.043.33704.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/1543bd80-9cae-498d-8b0f-9841e4d7b2a8/SurfaceLaptop7withIntel_Win11_22631_26.044.42206.0.msi'; $p="$env:TEMP\surface7_update.msi"; n 'Downloading Surface Laptop 7 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 7 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 7 Drivers Installed Successfully'; sleep 2
 
 ################ Chrome ###############
 
@@ -441,29 +446,17 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 # Zsh/Bash Commands
 
 ```bash
-
-# ###################################################################################################################
-/System/Volumes/Data/Library/SystemExtensions/> 
-                     
-102G    /Library/SystemExtensions/.staging
-systemextensionsctl list | Select-String "com.crowdstrike.falcon"
-
-X9E956P446 com.crowdstrike.falcon.Agent (7.36/208.07) Falcon Sensor [activated enabled]
-X9E956P446 com.crowdstrike.falcon.Agent (7.35/207.04)  Falcon Sensor [terminated waiting to uninstall on reboot]
-
-df -h /                                                        
-Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
-/dev/disk3s1s1   228Gi    12Gi    34Gi    26%    458k  359M    0%   /
-
-
 ###################################################################################################################
+
+# System capacity
+df -h /   
 
 # print the top 20 largest ghost files
 sudo lsof +L1 | awk '{print $1, $2, $3, $7, $10}' | sort -nk 4 | tail -n 20
 
 sudo du -sh /System/Volumes/Data/Library/* 2>/dev/null | sort -rh | head -n 10
 
-sudo bash -c "du -sh /Library/SystemExtensions/.* 2>/dev/null | sort -rh | head -n 5"
+sudo du -sh /Library/SystemExtensions/.* 2>/dev/null | sort -rh | head -n 5
 
 sudo find /Library/SystemExtensions/.staging -name "*.systemextension" | head -n 20
 
@@ -511,44 +504,9 @@ sudo jamf mdm -userLevelMdm
 
 ############################### System & Hardware Auditing ############################## 
 
-# Outputs macOS product version, build version, and product name.
-sw_vers: 
-
 # Outputs hardware UUID, serial number, processor architecture, and memory configuration.
 system_profiler SPHardwareDataType 
 
 # Displays system uptime and load averages.
 uptime 
-
-# Outputs current FileVault 2 encryption state.
-fdesetup status 
-
-# Verifies if a specific user possesses a SecureToken (required for FileVault decryption).
-sysadminctl -secureTokenStatus <username> 
-
-# Displays the status of System Integrity Protection (SIP).
-csrutil status 
-
-############################## Network Diagnostics ############################## 
-
-# Lists all registered network interfaces.
-networksetup -listallnetworkservices 
-
-# Retrieves the MAC address for the specified network service.
-networksetup -getmacaddress "Wi-Fi" 
-
-# Executes standard ICMP echo requests with a defined packet count.
-ping -c 4 <hostname> 
-
-Directory & Account Operations
-
-# Lists all local user accounts.
-dscl . -list /Users 
-
-# Outputs all directory attributes (UID, GID, home directory path) for a specified account.
-dscl . -read /Users/<username> 
-
-# Grants local administrator privileges to a standard user.
-sudo dseditgroup -o edit -a <username> -t user admin 
-
 ```
