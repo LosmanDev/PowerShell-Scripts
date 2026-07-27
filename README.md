@@ -83,7 +83,7 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome"
 
-"OneDrive" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"OUTLOOK" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -92,6 +92,20 @@ perfmon /rel
 # This diagnostic script checks the "health" of the PC to find hidden installation blockers: it verifies if the system is unstable (low reliability score), hasn't been rebooted in over a week, is waiting for a reboot (registry locks), has the Windows Installer service stuck, or has failed recent Windows Updates.
 
 Write-Host "Reliability Monitor" -f Cyan; $s = (Get-CimInstance Win32_ReliabilityStabilityMetrics | select -f 1).SystemStabilityIndex; Write-Host "Stability (1-10): " -NoNewline; if ($s -lt 5) { Write-Host $s -f Red }else { Write-Host $s -f Green }; $d = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).Days; Write-Host "Uptime:             $d Days" -f $(if ($d -gt 7) { 'Yellow' }else { 'White' }); $p = @(); if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ea 0) { $p += 'CBS' }; if (gp 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ea 0) { $p += 'WU' }; if ((gp 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ea 0).PendingFileRenameOperations) { $p += 'Rename' }; Write-Host "Reboot Pending:     " -NoNewline; if ($p) { Write-Host "YES ($($p -join ','))" -f Red }else { Write-Host "NO" -f Green }; $m = (gps msiexec -ea 0); Write-Host "MSI Exec Busy:      " -NoNewline; if ($m) { Write-Host "YES" -f Yellow }else { Write-Host "NO" -f Green }; Write-Host "`nLast 5 Updates:" -f Cyan; (New-Object -Com Microsoft.Update.Searcher).QueryHistory(0, 5) | % { Write-Host ("[{0}] {1}" -f $_.Date.ToString('MM-dd'), $_.Title.SubString(0, [math]::Min(45, $_.Title.Length))) -f $(if ($_.ResultCode -eq 2) { 'Green' }else { 'Red' }) }
+
+
+# ######################################################################### Software Versions installed on system #########################################################################
+
+Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
+
+# ############################################################ Event Viwer softwares installed by recent date #########################################################################
+
+Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
+
+
+################ Scans the Application & System for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
+
+$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); 'Application','System' | % { Write-Host "`nLOG: $_" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
 
 # ###################################################################################################################
 ```
@@ -108,7 +122,8 @@ Get-ChildItem "$env:USERPROFILE\Downloads" -Recurse -File -Force -ErrorAction Si
 
 
 # Checks the file system and disk for errors.
- chkdsk /f; chkdsk /r
+ echo y | chkdsk /f; echo y | chkdsk /r
+ 
    Use /f # to fix errors.
    Use /r # to locate bad sectors and recover readable data.
 
@@ -173,14 +188,13 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 
  Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'ipconfig /release; ipconfig /flushdns; ipconfig /renew; netsh winsock reset' 
 
-ping -f -l 1472 8.8.8.8
-ping -f -l 1464 8.8.8.8
-ping -f -l 1450 8.8.8.8
-ping -f -l 1350 8.8.8.8
+ping -f -l 1472 8.8.8.8; ping -f -l 1464 8.8.8.8; ping -f -l 1450 8.8.8.8; ping -f -l 1350 8.8.8.8
 
 netsh interface ipv4 show subinterfaces
 
 netsh interface ipv4 set subinterface "InterfaceName" mtu=YourMTUValue store=persistent
+
+netsh interface ipv4 set subinterface "Wi-Fi" mtu=1390 store=persistent
  
  # ###################################################################################################################
 ```
@@ -279,19 +293,6 @@ appwiz.cpl # control panel applications
 
 # ###################################################################################################################
 
-# ############### Software Versions installed on system ###############
-
-Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName
-
-# ############### Event Viwer softwares installed by recent date ###############
-
-Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='MsiInstaller';ID=1033,11724;StartTime=(Get-Date).AddDays(-5)} | % { $m=$_.Message; [PSCustomObject]@{Time=$_.TimeCreated.ToString('MM/dd/yyyy HH:mm:ss'); Action=if($_.Id -eq 11724){"Removed"}elseif($m -match "status: 0\."){"Installed"}else{"Failed"}; Name=if($m -match "Product(?: Name)?: (.*?)(?:\. Product Version:| --)"){$Matches[1]}else{"Unknown"}; Version=if($m -match "Product Version: ([0-9.]+)"){$Matches[1]}else{"N/A"}} } | ft -AutoSize
-
-
-################ Scans the Application, System, and Intune MDM logs for "Critical" or "Error" level events from the last 24 hours, printing the most recent 20 failures ###############
-
-$scanevnt=24; $s=(Get-Date).AddHours(-$scanevnt); 'Application','System','Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin' | % { Write-Host "`nLOG: $_" -f Cyan; Write-Host ('='*60); try { Get-WinEvent -FilterHashtable @{LogName=$_; Level=1,2; StartTime=$s} -MaxEvents 20 -EA Stop | Sort TimeCreated | % { Write-Host ("[{0}] {1:MM-dd HH:mm} ID={2} Src={3}" -f $_.LogName,$_.TimeCreated,$_.Id,$_.ProviderName) -f Magenta; ($_.Message -split "`r?`n" | ?{$_} | select -f 5) | % { Write-Host "    $_" -f White }; Write-Host ('-'*60) -f DarkGray } } catch { Write-Host "  FAIL REASON: $($_.Exception.Message)" -f Red } }
-
 # ############### System Policies pushed from Intune ###############
 
 gci 'HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device' -Rec | % { $p=$_.Name; $c=($p -replace '.*\\device\\?','').Split('\')[0]; $_|gp|% { $_.PSObject.Properties | ? Name -notmatch '^PS' | % { [pscustomobject]@{Source='PolicyManager'; Category=$c; Name=$_.Name; Value=$_.Value; Key=$p} } } } | sort Category,Name | ogv -Title 'Policy Manager View'
@@ -361,30 +362,32 @@ Function Reset-Intune { Write-Host ">>> RESETTING INTUNE AGENT <<<"; Stop-Servic
 ```bash
 
 ################ Local Outlook signatures→ OneDrive backup ###############
+
 $src="$env:APPDATA\Microsoft\Signatures";$dst="$env:USERPROFILE\OneDrive - BeiGene\Desktop\Signatures";if(!(Test-Path $dst)){New-Item $dst -ItemType Directory|Out-Null};Copy-Item "$src\*" $dst -Recurse -Force
 
 ################ Reverse: OneDrive → local Outlook signatures ###############
+
 $src="$env:USERPROFILE\OneDrive - BeiGene\Desktop\Signatures";$dst="$env:APPDATA\Microsoft\Signatures";if(!(Test-Path $dst)){New-Item $dst -ItemType Directory|Out-Null};Move-Item "$src\*" $dst -Recurse -Force
 
 ```
 
-# ############### Kyocera Logs ###############
+# ############################## Kyocera Logs ##############################
 
 %APPDATA%\Kyocera Cloud Print and Scan - Print status\logs\errors
 
-# ############### Outlook Monthly Channel ###############
+# ############################## Outlook Monthly Channel ##############################
 
 Set-Location "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
 .\OfficeC2RClient.exe /changesetting Channel=MonthlyEnterprise
 .\OfficeC2RClient.exe /update user
 
 
-# ############### Outlook Legacy Room Finder ###############
+# ############################## Outlook Legacy Room Finder ##############################
 
 $s=(Get-CimInstance Win32_UserProfile | ? LocalPath -match "mike.kao").SID; $p1="Registry::HKEY_USERS\$s\SOFTWARE\Policies\Microsoft\Office\16.0\Outlook\Options\Calendar"; $p2="Registry::HKEY_USERS\$s\SOFTWARE\Microsoft\Office\16.0\Outlook\Preferences"; if(!(Test-Path $p1)){New-Item $p1 -Force | Out-Null}; New-ItemProperty -Path $p1 -Name "ShowLegacyRoomFinder" -Value 1 -PropertyType DWord -Force | Out-Null; if(!(Test-Path $p2)){New-Item $p2 -Force | Out-Null}; New-ItemProperty -Path $p2 -Name "RoomFinderForceWebView" -Value 0 -PropertyType DWord -Force | Out-Null
 
 
-# ############### Intune Log collection ###############
+# ############################## Intune Log collection ##############################
 
 md C:\temp\odc
 cd c:\temp\odc
@@ -393,7 +396,7 @@ wget https://aka.ms/intuneXML -outfile Intune.xml
 Set-ExecutionPolicy Bypass
 .\IntuneODCStandAlone.ps1
 
-# ############### Edge Fix ###############
+# ############################## Edge Fix ##############################
 
 Remove-Item -Path "C:\Program Files (x86)\Microsoft\Edge\Application\149.*" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "C:\Program Files (x86)\Microsoft\EdgeUpdate\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
@@ -408,6 +411,31 @@ Start-Process msiexec.exe -ArgumentList '/i "C:\Users\ray.nunez\Downloads\Micros
 
 https://www.microsoft.com/en-us/edge/business/download?form=MA13FJ
 
+# ############################## Teams Add-in Fix ##############################
+
+%LocalAppData%\Publishers\8wekyb3d8bbwe\TeamsSharedConfig\
+
+Create file: app_switcher_settings.json
+Paste: {"defaultApp":1,"cohort":"","webAccountId_AAD":"","cohortStage":"","userId_AAD":"","previousT1MachineId":"","previousT1SessionId":""}
+
+Reboot outlook & Teams also repair add in settings > apps > teams addin 
+
+Set-Location -Path "$env:LOCALAPPDATA\Publishers\8wekyb3d8bbwe\TeamsSharedConfig"
+
+'{"defaultApp":1,"cohort":"","webAccountId_AAD":"","cohortStage":"","userId_AAD":"","previousT1MachineId":"","previousT1SessionId":""}' | Out-File -FilePath ".\app_switcher_settings.json" -Encoding utf8
+
+Exit Teams(From Tray as well) and outlook completely. Open teams and wait 1 minute then open outlook and the addin in should be there.
+
+If not close outlook and teams again, repair Teams add-in in settings > apps > teams-addin. reboot both apps. 
+
+# ############################## Chrome CA policy fix ##############################
+
+If you see this issue when open company resources by Chrome, even you have installed the Chrome extension on Windows. You can try to add the following registry key: 
+[HKEY_LOCAL_MACHINE\Software\Policies\Google\Chrome]"CloudAPAuthEnabled"=dword:00000001 
+
+New-Item -Path "HKLM:\Software\Policies\Google\Chrome" -Force | Out-Null; Set-ItemProperty -Path "HKLM:\Software\Policies\Google\Chrome" -Name "CloudAPAuthEnabled" -Value 1 -Type DWord
+if (Test-Path "HKLM:\Software\Policies\Google\Chrome") { Set-ItemProperty -Path "HKLM:\Software\Policies\Google\Chrome" -Name "CloudAPAuthEnabled" -Value 1 -Type DWord }
+
 ````
 
 ### AUTOMATED SOFTWARE INSTALLS
@@ -417,7 +445,7 @@ https://www.microsoft.com/en-us/edge/business/download?form=MA13FJ
 # Incognito Edge
 Start-Process msedge -ArgumentList "-inprivate"
 
-# ############### Lenovo System Update ###############
+# ############### Lenovo System Update ##############################
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.lenovo.com/pccbbs/thinkvantage_en/system_update_5.08.03.59.exe'; $p="$env:TEMP\lenovo_update.exe"; n 'Downloading Lenovo System Update...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Lenovo System Update...'; start $p -Arg '/VERYSILENT /NORESTART' -Wait; ri $p -Force; n 'Lenovo System Update Installed Successfully'; sleep 2
 
@@ -430,7 +458,7 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 ################ Surface Laptop 6 ############### 
 # https://www.microsoft.com/en-us/download/details.aspx?id=105946
 
-Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.051.6840.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
+Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://download.microsoft.com/download/a53facb0-c939-4302-a0d3-53aa18217230/SurfaceLaptop6forBusiness_Win11_22631_26.060.411.0.msi'; $p="$env:TEMP\surface6_update.msi"; n 'Downloading Surface Laptop 6 Drivers...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Surface Laptop 6 Drivers...'; start msiexec -Arg "/i `"$p`" /qn /norestart" -Wait; ri $p -Force; n 'Surface Laptop 6 Drivers Installed Successfully'; sleep 2
 
 ################ Surface Laptop 7 ############### 
 # https://www.microsoft.com/en-us/download/details.aspx?id=108014
