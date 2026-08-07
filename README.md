@@ -12,6 +12,10 @@ wmic bios get serialnumber
 
 (Get-CimInstance Win32_ComputerSystemProduct).IdentifyingNumber
 
+(Get-CimInstance Win32_ComputerSystem).Model
+
+(Get-CimInstance Win32_ComputerSystem).Manufacturer
+
 (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').DisplayVersion
 
 ################ Get system bios ###############
@@ -86,7 +90,7 @@ Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, I
 
 "POWERPNT","EXCEL","WINWORD","OneDrive","OUTLOOK","ms-teams","Teams","msedge","chrome"
 
-"OUTLOOK" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
+"Code" | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop; Write-Host "Terminated: $($_.Name) (PID $($_.Id))" } catch { Write-Host "Failed to terminate: $($_.Name) (PID $($_.Id))" } } }
 
 
 ################ Reliability Monitor ###############
@@ -210,6 +214,10 @@ netsh interface ipv4 set subinterface "Wi-Fi" mtu=1390 store=persistent
  gpresult /h # List all the policies applied and security groups in HTML.
  dsregcmd /status # Confirm the Device is Enrolled in Intune.
  dsregcmd /refreshprt #Forces the device to immediately refresh its Primary Refresh Token (PRT) re-establishing authentication state
+ 
+ $env:windir\system32\deviceenroller.exe /c /AutoEnrollMDMUsingAADDeviceCredential # Enroll system in to Intune requires a Hybrid Azure AD Joined architecture.
+
+ $env:windir\system32\deviceenroller.exe /c /AutoEnrollMDM # utilizes Primary Refresh Token (PRT) endpoints configured as AzureAdJoined:YES and DomainJoined:NO.
 
 ```
 ```powershell
@@ -223,6 +231,9 @@ netsh interface ipv4 set subinterface "Wi-Fi" mtu=1390 store=persistent
  $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://synccompliance")
 
  Get-ScheduledTask | ? {$_.TaskName -eq 'PushLaunch'} | % { $_ | Start-ScheduledTask; sleep 2; $_ | Get-ScheduledTaskInfo | select TaskName, Last* }; $Shell = New-Object -ComObject Shell.Application; $Shell.open("intunemanagementextension://syncapp"); $Shell.open("intunemanagementextension://synccompliance")
+
+Test-NetConnection -ComputerName manage.microsoft.com -Port 443
+Test-NetConnection -ComputerName enterpriseregistration.windows.net -Port 443
 
 
 ```
@@ -245,9 +256,14 @@ shutdown /r /fw /t 0 # Motherboard Firmware Interface (UEFI / BIOS)
  powercfg /batteryreport # Generates a detailed battery health report.
  powercfg /energy # Generates an energy efficiency report.
  powercfg.cpl
+ ```
 
+```powershell
 # Quick extraction of battery report
  powercfg /batteryreport /output "$env:TEMP\br.html" > $null; $h = Get-Content "$env:TEMP\br.html" -Raw; $o = [regex]::Match($h, '(?s)Since OS install.*?<td class="hms">([^<]+)</td>.*?<div[^>]*>([^<]+)</div>.*?<td class="hms">([^<]+)</td>.*?<div[^>]*>([^<]+)</div>'); [PSCustomObject]@{ 'Design Capacity' = [regex]::Match($h, 'DESIGN CAPACITY</span></td><td>(.*?)\s*mWh').Groups[1].Value; 'Full Charge Capacity' = [regex]::Match($h, 'FULL CHARGE CAPACITY</span></td><td>(.*?)\s*mWh').Groups[1].Value; 'Cycle Count' = [regex]::Match($h, 'CYCLE COUNT</span></td><td>([^<]+)</td>').Groups[1].Value; 'Active (Full Charge)' = $o.Groups[1].Value; 'Standby (Full Charge)' = $o.Groups[2].Value; 'Active (Design Capacity)' = $o.Groups[3].Value; 'Standby (Design Capacity)' = $o.Groups[4].Value }
+
+# Quick extraction of energy report
+ powercfg /energy /output "$env:TEMP\energy.html" > $null; $h = Get-Content "$env:TEMP\energy.html" -Raw; [regex]::Matches($h, '(?i)(?s)<div class="[^"]*(error|warning|info)-log-entry[^"]*">.*?<div class="log-entry-header">(.*?)</div>.*?<div class="log-entry-description">(.*?)</div>(.*?)<span></span></div>') | ForEach-Object { $s=$_.Groups[1].Value.ToUpper(); $c=switch($s){'ERROR'{'Red'}'WARNING'{'Yellow'}default{'Cyan'}}; Write-Host ("[{0}] {1}" -f $s, $_.Groups[2].Value.Trim()) -ForegroundColor $c; $d=$_.Groups[3].Value.Trim(); if($d){ Write-Host ("  " + ($d -replace '\s+', ' ')) -ForegroundColor $c }; [regex]::Matches($_.Groups[4].Value, '(?i)(?s)<td[^>]*>(?:<span[^>]*>)?(.*?)(?:</span>)?</td>\s*<td[^>]*>(.*?)</td>') | ForEach-Object { Write-Host ("    {0,-35} : {1}" -f ($_.Groups[1].Value.Trim() -replace '\s+', ' '), ($_.Groups[2].Value.Trim() -replace '\s+', ' ')) -ForegroundColor $c }; Write-Host "" }
 
 # Event Viewer Battery reports [524 Critical]
  Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; ID=@(524)} | Select-Object TimeCreated, Id, @{Name='Context'; Expression={switch($_.Id){524{'Critical Battery Depletion'}}}}, Message | Format-Table -AutoSize -Wrap
@@ -318,16 +334,22 @@ Stop-Service -Name "csc_umbrellaagent" -Force -EA SilentlyContinue; sc.exe delet
 'f5c225e3-9064-4caf-9c52-0f3a8f375770' = 'CsFalcon'; 
 '9df64576-1eff-47b6-886f-00ce74f51b27' = 'Company Portal'
 
-'f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92' | % { $i=$_; sls $i 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,20 | % { [pscustomobject]@{ID=$i; File=$_.Filename; Match=$_.Line.Trim(); Context=($_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail'} | Out-String).Trim()} } | select -last 5 } | fl
+$AppIDs = @('f74971b0-13e6-42c8-a52d-1f1336e78647', '5e811505-aa71-4046-815d-68d931bfbe92')
+$AppIDs | % { $i=$_; sls $i 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,20 | % { [pscustomobject]@{ID=$i; File=$_.Filename; Match=$_.Line.Trim(); Context=($_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail'} | Out-String).Trim()} } | select -last 5 } | fl
 
 
 # ############### Checks status for the AppID ###############
 
-$scanApp=@{'f74971b0-13e6-42c8-a52d-1f1336e78647'='Win 24H2 Installer';'5e811505-aa71-4046-815d-68d931bfbe92'='Win 24H2 Feature Update'}; $s=@{1000='Success';2000='Pending';3000='In Progress';4000='Failed'}; gci 'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps' -Rec | ? {$scanApp.ContainsKey($_.PSChildName)} | % { $r=($_|gp -Name EnforcementStateMessage -ea 0).EnforcementStateMessage; $j=if($r){$r|ConvertFrom-Json}; $c=$j.EnforcementState; $e=$j.ErrorCode; if(!$c){$c=$_.GetValue('EnforcementState');$e=$_.GetValue('LastErrorCode')}; [pscustomobject]@{App=$scanApp.$_.PSChildName; Status=$s[[int]$c]; Err=$e; Time=$_.GetValue('LastUpdatedTimeUtc'); ID=$_.PSChildName} } | ft -a
+$scanApp = @{
+    'f74971b0-13e6-42c8-a52d-1f1336e78647' = 'Win 24H2 Installer'
+    '5e811505-aa71-4046-815d-68d931bfbe92' = 'Win 24H2 Feature Update'
+}
+$s=@{1000='Success';2000='Pending';3000='In Progress';4000='Failed'}; gci 'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps' -Rec | ? {$scanApp.ContainsKey($_.PSChildName)} | % { $r=($_|gp -Name EnforcementStateMessage -ea 0).EnforcementStateMessage; $j=if($r){$r|ConvertFrom-Json}; $c=$j.EnforcementState; $e=$j.ErrorCode; if(!$c){$c=$_.GetValue('EnforcementState');$e=$_.GetValue('LastErrorCode')}; [pscustomobject]@{App=$scanApp[$_.PSChildName]; Status=$s[[int]$c]; Err=$e; Time=$_.GetValue('LastUpdatedTimeUtc'); ID=$_.PSChildName} } | ft -a
 
 # ############### Reset Intune Service to re-install AppID ###############
 
-$resetAppInstall=@('f74971b0-13e6-42c8-a52d-1f1336e78647','5e811505-aa71-4046-815d-68d931bfbe92'); $r='HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps'; $resetAppInstall | % { $d=$_; write-host "Scanning $d" -f Cyan; $t=gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $d}; if($t){ $t | % { write-host "Deleting $($_.Name)" -f Yellow; ri $_.PSPath -Rec -Force } } else { write-host "No keys found" -f Gray } }; write-host "Restarting Service..." -f Green; Restart-Service "IntuneManagementExtension" -Force
+$AppIDs = @('f74971b0-13e6-42c8-a52d-1f1336e78647', '5e811505-aa71-4046-815d-68d931bfbe92')
+$r='HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps'; $AppIDs | % { $d=$_; write-host "Scanning $d" -f Cyan; $t=gci $r -Rec -ea 0 | ? {$_.PSChildName -eq $d}; if($t){ $t | % { write-host "Deleting $($_.Name)" -f Yellow; ri $_.PSPath -Rec -Force } } else { write-host "No keys found" -f Gray } }; write-host "Restarting Service..." -f Green; Restart-Service "IntuneManagementExtension" -Force
 
 # ############### Stops service, kills history, hunts down hidden GRS keys for both apps, and restarts service ###############
 
@@ -335,12 +357,13 @@ Stop-Service "IntuneManagementExtension" -Force -ea 0; $t=@('f74971b0-13e6-42c8-
 
 # ############### App ID Log Error Tracker ###############
 
-sls 'f74971b0-13e6-42c8-a52d-1f1336e78647|5e811505-aa71-4046-815d-68d931bfbe92' 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,15 | % { $c=$_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail|GRS'} | Out-String; if($c){ [pscustomobject]@{Log=$_.Filename; Match=$_.Line.Trim().Substring(0, [math]::Min(80,$_.Line.Length)); Context=$c.Trim()} } } | fl
+$AppID = '62e36920-5c12-47db-9797-81019a68ff7c'
+sls $AppID 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\*.log' -Context 0,15 | % { $c=$_.Context.PostContext | ? {$_ -match 'ExitCode|Error|Fail|GRS'} | Out-String; if($c){ [pscustomobject]@{Log=$_.Filename; Match=$_.Line.Trim().Substring(0, [math]::Min(80,$_.Line.Length)); Context=$c.Trim()} } } | fl
 
 # ############### Force Run (Installer Only) ###############
 
-$e="C:\Program Files (x86)\Microsoft Intune Management Extension\AgentExecutor.exe"; if(Test-Path $e){ & $e -configFile "C:\Program Files (x86)\Microsoft Intune Management Extension\AgentExecutorConfig.xml" -appId 'f74971b0-13e6-42c8-a52d-1f1336e78647' -operation 1 } else { echo "AgentExecutor not found" }
-
+$AppID = '62e36920-5c12-47db-9797-81019a68ff7c'
+$e="C:\Program Files (x86)\Microsoft Intune Management Extension\AgentExecutor.exe"; if(Test-Path $e){ & $e -configFile "C:\Program Files (x86)\Microsoft Intune Management Extension\AgentExecutorConfig.xml" -appId $AppID -operation 1 } else { echo "AgentExecutor not found" }
 
 # ###################################################################################################################
 
@@ -436,8 +459,7 @@ If not close outlook and teams again, repair Teams add-in in settings > apps > t
 If you see this issue when open company resources by Chrome, even you have installed the Chrome extension on Windows. You can try to add the following registry key: 
 [HKEY_LOCAL_MACHINE\Software\Policies\Google\Chrome]"CloudAPAuthEnabled"=dword:00000001 
 
-New-Item -Path "HKLM:\Software\Policies\Google\Chrome" -Force | Out-Null; Set-ItemProperty -Path "HKLM:\Software\Policies\Google\Chrome" -Name "CloudAPAuthEnabled" -Value 1 -Type DWord
-if (Test-Path "HKLM:\Software\Policies\Google\Chrome") { Set-ItemProperty -Path "HKLM:\Software\Policies\Google\Chrome" -Name "CloudAPAuthEnabled" -Value 1 -Type DWord }
+if (!(Test-Path "HKLM:\Software\Policies\Google\Chrome")) { New-Item -Path "HKLM:\Software\Policies\Google\Chrome" -Force | Out-Null }; Set-ItemProperty -Path "HKLM:\Software\Policies\Google\Chrome" -Name "CloudAPAuthEnabled" -Value 1 -Type DWord
 
 ````
 
@@ -472,12 +494,27 @@ Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object Sy
 
 Add-Type -A System.Windows.Forms,System.Drawing; function n($m){$b=New-Object System.Windows.Forms.NotifyIcon;$b.Icon=[System.Drawing.SystemIcons]::Information;$b.Visible=$true;$b.ShowBalloonTip(5000,'Software Install',$m,[System.Windows.Forms.ToolTipIcon]::Info);sleep -m 600;$b.Dispose()}; $u='https://dl.google.com/chrome/install/latest/chrome_installer.exe'; $p="$env:TEMP\chrome_installer.exe"; n 'Downloading Google Chrome...'; (New-Object System.Net.WebClient).DownloadFile($u, $p); n 'Installing Google Chrome...'; start $p -Arg '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait; ri $p -Force; n 'Google Chrome Installed Successfully'; sleep 2
 
+
+# Surface Drivers extraction for autounattend
+msiexec /a "C:\Users\liban.osman\Downloads\SurfaceLaptop5_Win11_22631_26.043.30647.0.msi" /qb TARGETDIR="C:\Extracted\Surface5"
+msiexec /a "C:\Users\liban.osman\Downloads\SurfaceLaptop6forBusiness_Win11_22631_26.060.411.0.msi" /qb TARGETDIR="C:\Extracted\Surface6"
+msiexec /a "C:\Users\liban.osman\Downloads\SurfaceLaptop7withIntel_Win11_22631_26.044.42206.0.msi" /qb TARGETDIR="C:\Extracted\Surface7"
+
+xcopy C:\Extracted\Surface5\SurfaceUpdate\* D:\Drivers\Surface5\ /E /H /C /I /Y
+xcopy C:\Extracted\Surface6\SurfaceUpdate\* D:\Drivers\Surface6\ /E /H /C /I /Y
+xcopy C:\Extracted\Surface7\SurfaceUpdate\* D:\Drivers\Surface7\ /E /H /C /I /Y
+
 ```
 
 # Zsh/Bash Commands
 
 ```bash
 ###################################################################################################################
+
+rm ~/Library/Preferences/com.apple.finder.plist
+
+# Kill the process to force regeneration by typing
+killall Finder
 
 # System capacity
 df -h /   
